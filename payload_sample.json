@@ -1,0 +1,14 @@
+{
+    "email": "john.cartwright@gmail.com",
+    "bbox": "-98.150,27.451,-96.018,28.807",
+    "create_grid": false,
+    "datasets": [
+        {
+            "type": "csb",
+            "provider": "Rose Point"
+        },
+        {
+            "type": "multibeam"
+        }
+    ]
+}

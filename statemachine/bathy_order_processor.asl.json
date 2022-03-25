@@ -1,0 +1,295 @@
+{
+  "Comment": "orchestrate the processing steps for a bathymetry data request",
+  "StartAt": "insert order record into database",
+  "States": {
+    "insert order record into database": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${InitializeOrderRecordFunctionArn}"
+      },
+      "Retry": [{
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+      }],
+      "ResultPath": null,
+      "Next": "Foreach_Dataset"
+    },
+    "Foreach_Dataset": {
+      "Type": "Map",
+      "Iterator": {
+        "StartAt": "Dataset_Type",
+        "States": {
+          "Dataset_Type": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.type",
+                "StringEquals": "csb",
+                "Next": "insert CSB record into database"
+              },
+              {
+                "Variable": "$.type",
+                "StringEquals": "multibeam",
+                "Next": "insert MB record into database"
+              }
+            ]
+          },
+          "insert CSB record into database": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:putItem",
+            "Parameters": {
+              "TableName": "bathy-orders",
+              "Item": {
+                "PK": {
+                  "S.$": "States.Format('ORDER#{}', $$.Execution.Input.order_id)"
+                },
+                "SK": {
+                  "S.$": "States.Format('DATASET#{}', $.type)"
+                },
+                "other": {
+                  "M.$": "$"
+                }
+              }
+            },
+            "ResultPath": null,
+            "Next": "FormatPointQuery",
+            "Comment": "insert dataset record into order tracking database"
+          },
+          "insert MB record into database": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:putItem",
+            "Parameters": {
+              "TableName": "bathy-orders",
+              "Item": {
+                "PK": {
+                  "S.$": "States.Format('ORDER#{}', $$.Execution.Input.order_id)"
+                },
+                "SK": {
+                  "S.$": "States.Format('DATASET#{}', $.type)"
+                },
+                "other": {
+                  "M.$": "$"
+                }
+              }
+            },
+            "ResultPath": null,
+            "Next": "Query Multibeam Catalog",
+            "Comment": "insert dataset record into order tracking database"
+          },
+          "FormatPointQuery": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "Payload": {
+                "dataset.$": "$",
+                "bbox.$": "$$.Execution.Input.bbox"
+              },
+              "FunctionName": "${FormatPointQueryFunctionArn}"
+            },
+            "Retry": [{
+                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+            }],
+            "OutputPath": "$.Payload",
+            "Next": "Start Point Extract"
+          },
+          "Start Point Extract": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+            "Parameters": {
+              "QueryString.$": "$.QUERY_STRING",
+              "WorkGroup": "primary",
+              "ResultConfiguration": {
+                "OutputLocation": "${AthenaOutputBucket}"
+              }
+            },
+            "ResultSelector": {
+              "QueryExecutionId.$": "$.QueryExecution.QueryExecutionId",
+              "OutputLocation.$": "$.QueryExecution.ResultConfiguration.OutputLocation"
+            },
+            "ResultPath": "$.TaskResult",
+            "Next": "Stage CSB Data"
+          },
+          "Stage CSB Data": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sqs:sendMessage.waitForTaskToken",
+            "HeartbeatSeconds": 60,
+            "Parameters": {
+              "MessageBody": {
+                "Message.$": "$",
+                "TaskToken.$": "$$.Task.Token"
+              },
+              "QueueUrl": "${StageCsbDataQueueUrl}"
+            },
+            "ResultPath": null,
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "ResultPath": "$.TaskResult",
+                "Next": "Dataset Error"
+              }
+            ],
+            "Next": "Update CSB Record",
+            "Comment": "Copy Athena query output to EC2 instance"
+          },
+          "Update CSB Record": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${UpdateDatasetRecordFunctionArn}",
+              "Payload": {
+                "order_id.$": "$$.Execution.Input.order_id",
+                "type.$": "$.dataset.type",
+                "output_location.$": "$.TaskResult.OutputLocation",
+                "status": "complete"
+              }
+            },
+            "Retry": [{
+                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+            }],
+            "ResultPath": null,
+            "End": true
+          },
+          "Query Multibeam Catalog": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sqs:sendMessage.waitForTaskToken",
+            "HeartbeatSeconds": 60,
+            "Parameters": {
+              "MessageBody": {
+                "Message.$": "$",
+                "TaskToken.$": "$$.Task.Token"
+              },
+              "QueueUrl": "${MultibeamCatalogQueueUrl}"
+            },
+            "ResultPath": "$.TaskResult",
+            "Catch": [{
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.TaskResult",
+                "Next": "Dataset Error"
+            }],
+            "Next": "Stage Multibeam Data",
+            "Comment": "query external catalog and wait for response"
+          },
+          "Stage Multibeam Data": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sqs:sendMessage.waitForTaskToken",
+            "HeartbeatSeconds": 60,
+            "Parameters": {
+              "MessageBody": {
+                "Message.$": "$",
+                "TaskToken.$": "$$.Task.Token"
+              },
+              "QueueUrl": "${StageMultibeamDataQueueUrl}"
+            },
+            "ResultPath": null,
+            "Catch": [{
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.TaskResult",
+                "Next": "Dataset Error"
+            }],
+            "Next": "Update Multibeam Record"
+          },
+          "Dataset Error": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${DatasetErrorHandlerFunctionArn}",
+              "Payload": {
+                "order_id.$": "$$.Execution.Input.order_id",
+                "type.$": "$.type",
+                "body.$": "$.TaskResult",
+                "status": "error"
+              }
+            },
+            "Retry": [{
+                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+            }],
+            "ResultPath": null,
+            "End": true
+          },
+          "Update Multibeam Record": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${UpdateDatasetRecordFunctionArn}",
+              "Payload": {
+                "order_id.$": "$$.Execution.Input.order_id",
+                "type.$": "$.type",
+                "body.$": "$.TaskResult",
+                "status": "complete"
+              }
+            },
+            "Retry": [{
+                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+            }],
+            "ResultPath": null,
+            "End": true
+          }
+        }
+      },
+      "ItemsPath": "$.datasets",
+      "Next": "VerifyDatasetsReady"
+    },
+    "VerifyDatasetsReady": {
+      "Type": "Pass",
+      "Parameters": {
+        "Input.$": "$$.Execution.Input"
+      },
+      "Next": "Create Grid?"
+    },
+    "Create Grid?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Not": {
+            "Variable": "$.Input.grid",
+            "IsPresent": true
+          },
+          "Next": "SQS SendMessage"
+        },
+        {
+          "Variable": "$.Input",
+          "IsPresent": true,
+          "Next": "Enqueue Grid Generation"
+        }
+      ]
+    },
+    "SQS SendMessage": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "Parameters": {
+        "QueueUrl": "${OrderNotificationQueueUrl}",
+        "MessageBody": {
+          "email.$": "$$.Execution.Input.email",
+          "order_id.$": "$.Input.order_id"
+        }
+      },
+      "Next": "Notify User"
+    },
+    "Notify User": {
+      "Type": "Pass",
+      "End": true
+    },
+    "Enqueue Grid Generation": {
+      "Type": "Pass",
+      "End": true
+    }
+  }
+}

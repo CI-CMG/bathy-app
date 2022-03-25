@@ -1,0 +1,12 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "bathy-app"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1qpcqpwa0wjrz"
+s3_prefix = "bathy-app"
+region = "us-east-1"
+profile = "mfa"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+image_repositories = []
