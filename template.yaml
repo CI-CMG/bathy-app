@@ -153,6 +153,14 @@ Resources:
       Tags:
         project: "csb-pilot"
 
+  VerifyDatasetStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: verify_dataset_status/
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Description: "verify all datasets in order are staged and ready for processing or delivery"
+      Tags:
+        project: "csb-pilot"
 
   #
   # State Machine
@@ -175,6 +183,7 @@ Resources:
         FormatPointQueryFunctionArn: !GetAtt FormatPointQueryFunction.Arn
         DatasetErrorHandlerFunctionArn: !GetAtt DatasetErrorHandlerFunction.Arn
         MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
+        VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
         AthenaOutputBucket: "s3://csb-pilot-delivery/"
 
 
