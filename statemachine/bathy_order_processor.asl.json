@@ -245,14 +245,41 @@
         }
       },
       "ItemsPath": "$.datasets",
-      "Next": "VerifyDatasetsReady"
+      "Next": "Verify Dataset Status"
     },
-    "VerifyDatasetsReady": {
+    "Verify Dataset Status": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${VerifyDatasetStatusFunctionArn}",
+        "Payload": {
+          "order_id.$": "$$.Execution.Input.order_id"
+        }
+      },
+      "Retry": [{
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{
+        "ErrorEquals": ["States.ALL"],
+        "Next": "Order Error"
+      }],
+      "ResultSelector": {
+        "Input.$":"$$.Execution.Input"
+      },
+      "OutputPath": "$.Input",
+      "Next": "Create Grid?"
+    },
+    "Order Error": {
       "Type": "Pass",
       "Parameters": {
-        "Input.$": "$$.Execution.Input"
+        "Input.$": "$$.Execution.Input",
+        "Error.$": "States.StringToJson($.Cause)"
       },
-      "Next": "Create Grid?"
+      "Next": "Notify User"
     },
     "Create Grid?": {
       "Type": "Choice",
@@ -262,7 +289,7 @@
             "Variable": "$.Input.grid",
             "IsPresent": true
           },
-          "Next": "SQS SendMessage"
+          "Next": "Notify User"
         },
         {
           "Variable": "$.Input",
@@ -271,20 +298,16 @@
         }
       ]
     },
-    "SQS SendMessage": {
+    "Notify User": {
       "Type": "Task",
       "Resource": "arn:aws:states:::sqs:sendMessage",
       "Parameters": {
         "QueueUrl": "${OrderNotificationQueueUrl}",
         "MessageBody": {
-          "email.$": "$$.Execution.Input.email",
-          "order_id.$": "$.Input.order_id"
+          "email.$": "$.email",
+          "order_id.$": "$.order_id"
         }
       },
-      "Next": "Notify User"
-    },
-    "Notify User": {
-      "Type": "Pass",
       "End": true
     },
     "Enqueue Grid Generation": {
