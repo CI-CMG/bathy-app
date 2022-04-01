@@ -5,6 +5,7 @@ import time
 import boto3
 import uuid
 from datetime import datetime
+from datetime import timezone
 
 # setup logging
 log_level = os.getenv('LOGLEVEL', default='WARNING').upper()
@@ -34,6 +35,7 @@ def get_item(PK, SK):
 def insert_item(order_id, email, bbox, status='initialized', grid=None):
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(TABLE)
+    now = datetime.now(timezone.utc).isoformat(timespec='seconds')
     # expire records 60 days after creation
     ttl = int(time.time()) + (60 * 24 * 60 * 60)
     attributes = {
@@ -42,11 +44,10 @@ def insert_item(order_id, email, bbox, status='initialized', grid=None):
         'email': email,
         'bbox': bbox,
         'status': status,
-        'last_update': datetime.now().isoformat(timespec='seconds'),
+        'last_update': now,
         'TTL': ttl
     }
     if grid:
-        print('found grid...')
         attributes['grid'] = grid
 
     response = table.put_item(

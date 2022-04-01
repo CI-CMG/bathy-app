@@ -4,6 +4,7 @@ import os
 import time
 import boto3
 from datetime import datetime
+from datetime import timezone
 
 # setup logging
 log_level = os.getenv('LOGLEVEL', default='WARNING').upper()
@@ -22,7 +23,7 @@ def update_item(order_id, dataset, output_location=None, status='SUCCEEDED'):
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(TABLE)
 
-    now = datetime.now().isoformat(timespec='seconds')
+    now = datetime.now(timezone.utc).isoformat(timespec='seconds')
     # expire records 60 days after last update
     ttl = int(time.time()) + (60 * 24 * 60 * 60)
 
