@@ -12,6 +12,8 @@ from botocore.exceptions import ClientError
 
 
 def main():
+    mandatory_fields = ['order_id', 'bbox', 'TaskToken', 'query_params']
+
     # run forever
     while True:
         # WaitTimeSeconds enables Long Polling
@@ -20,13 +22,20 @@ def main():
 
         for message in messages:
             body = json.loads(message.body)
-            if 'order_id' not in body or 'TaskToken' not in body:
-                logger.error(f"message is missing order_id or TaskToken")
+            try:
+                required_fields_present(body, mandatory_fields)
+            except Exception as e:
+                err_msg = str(e)
+                logger.error(err_msg)
+                send_failure(task_token, error_cause=err_msg)
                 message.delete()
                 continue
 
-            order_id = body['order_id']
             task_token = body['TaskToken']
+            order_id = body['order_id']
+            bbox = body['bbox']
+            query_params = body['query_params']
+
             try:
                 # simulate work being done...
                 time.sleep(3)
@@ -47,6 +56,14 @@ def main():
         logger.debug(f"all messages processed. waiting for {SLEEP_MINUTES} minutes before checking again...")
         time.sleep(SLEEP_MINUTES*60)
     # end of infinite while loop
+
+
+
+def required_fields_present(payload, field_list):
+    for i in field_list:
+        if i not in payload:
+            raise Exception(f"payload is missing field {i}")
+    return payload
 
 
 def send_success(task_token, payload=None):
