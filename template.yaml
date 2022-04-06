@@ -182,7 +182,7 @@ Resources:
         InitializeOrderRecordFunctionArn: !GetAtt InitializeOrderRecordFunction.Arn
         FormatPointQueryFunctionArn: !GetAtt FormatPointQueryFunction.Arn
         DatasetErrorHandlerFunctionArn: !GetAtt DatasetErrorHandlerFunction.Arn
-        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
+#        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
         VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
         AthenaOutputBucket: "s3://csb-pilot-delivery/"
 
