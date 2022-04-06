@@ -69,23 +69,23 @@ Resources:
             Path: /order/{proxy+}
             Method: get
 
-  MultibeamCatalogFunction:
-      Type: AWS::Serverless::Function
-      Properties:
-        CodeUri: multibeam_catalog_query/
-        Role: arn:aws:iam::282856304593:role/csb-pilot-role
-        Description: "placeholder which mocks the querying of MB catalog"
-        Tags:
-          project: "csb-pilot"
-        Environment:
-          Variables:
-            MY_AWS_REGION: !Ref AWS::Region
-        Events:
-          multibeamCatalogQueryEvent:
-            Type: SQS
-            Properties:
-              Queue: !GetAtt MultibeamCatalogQueue.Arn
-              Enabled: true
+#  MultibeamCatalogFunction:
+#      Type: AWS::Serverless::Function
+#      Properties:
+#        CodeUri: multibeam_catalog_query/
+#        Role: arn:aws:iam::282856304593:role/csb-pilot-role
+#        Description: "placeholder which mocks the querying of MB catalog"
+#        Tags:
+#          project: "csb-pilot"
+#        Environment:
+#          Variables:
+#            MY_AWS_REGION: !Ref AWS::Region
+#        Events:
+#          multibeamCatalogQueryEvent:
+#            Type: SQS
+#            Properties:
+#              Queue: !GetAtt MultibeamCatalogQueue.Arn
+#              Enabled: true
 
   DatasetErrorHandlerFunction:
     Type: AWS::Serverless::Function
