@@ -167,7 +167,9 @@
             "HeartbeatSeconds": 60,
             "Parameters": {
               "MessageBody": {
-                "Message.$": "$",
+                "query_params.$": "$",
+                "order_id.$": "$$.Execution.Input.order_id",
+                "bbox.$": "$$.Execution.Input.bbox",
                 "TaskToken.$": "$$.Task.Token"
               },
               "QueueUrl": "${MultibeamCatalogQueueUrl}"
