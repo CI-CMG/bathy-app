@@ -114,31 +114,7 @@
               "OutputLocation.$": "$.QueryExecution.ResultConfiguration.OutputLocation"
             },
             "ResultPath": "$.TaskResult",
-            "Next": "Stage CSB Data"
-          },
-          "Stage CSB Data": {
-            "Type": "Task",
-            "Resource": "arn:aws:states:::sqs:sendMessage.waitForTaskToken",
-            "HeartbeatSeconds": 60,
-            "Parameters": {
-              "MessageBody": {
-                "Message.$": "$",
-                "TaskToken.$": "$$.Task.Token"
-              },
-              "QueueUrl": "${StageCsbDataQueueUrl}"
-            },
-            "ResultPath": null,
-            "Catch": [
-              {
-                "ErrorEquals": [
-                  "States.ALL"
-                ],
-                "ResultPath": "$.TaskResult",
-                "Next": "Dataset Error"
-              }
-            ],
-            "Next": "Update CSB Record",
-            "Comment": "Copy Athena query output to EC2 instance"
+            "Next": "Update CSB Record"
           },
           "Update CSB Record": {
             "Type": "Task",
@@ -180,27 +156,8 @@
                 "ResultPath": "$.TaskResult",
                 "Next": "Dataset Error"
             }],
-            "Next": "Stage Multibeam Data",
+            "Next": "Update Multibeam Record",
             "Comment": "query external catalog and wait for response"
-          },
-          "Stage Multibeam Data": {
-            "Type": "Task",
-            "Resource": "arn:aws:states:::sqs:sendMessage.waitForTaskToken",
-            "HeartbeatSeconds": 60,
-            "Parameters": {
-              "MessageBody": {
-                "Message.$": "$",
-                "TaskToken.$": "$$.Task.Token"
-              },
-              "QueueUrl": "${StageMultibeamDataQueueUrl}"
-            },
-            "ResultPath": null,
-            "Catch": [{
-                "ErrorEquals": ["States.ALL"],
-                "ResultPath": "$.TaskResult",
-                "Next": "Dataset Error"
-            }],
-            "Next": "Update Multibeam Record"
           },
           "Dataset Error": {
             "Type": "Task",
@@ -232,6 +189,7 @@
                 "order_id.$": "$$.Execution.Input.order_id",
                 "type.$": "$.type",
                 "body.$": "$.TaskResult",
+                "output_location.$": "$.TaskResult.output_location",
                 "status": "complete"
               }
             },
@@ -263,14 +221,13 @@
           "IntervalSeconds": 2,
           "MaxAttempts": 6,
           "BackoffRate": 2
-        }
-      ],
+      }],
       "Catch": [{
         "ErrorEquals": ["States.ALL"],
         "Next": "Order Error"
       }],
       "ResultSelector": {
-        "Input.$":"$$.Execution.Input"
+        "Input.$": "$$.Execution.Input"
       },
       "OutputPath": "$.Input",
       "Next": "Create Grid?"
