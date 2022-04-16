@@ -134,7 +134,10 @@
                 "MaxAttempts": 6,
                 "BackoffRate": 2
             }],
-            "ResultPath": null,
+            "ResultSelector": {
+              "Input.$": "$$.Execution.Input"
+            },
+            "OutputPath": "$.Input",
             "End": true
           },
           "Query Multibeam Catalog": {
@@ -177,7 +180,10 @@
                 "MaxAttempts": 6,
                 "BackoffRate": 2
             }],
-            "ResultPath": null,
+            "ResultSelector": {
+              "Input.$": "$$.Execution.Input"
+            },
+            "OutputPath": "$.Input",
             "End": true
           },
           "Update Multibeam Record": {
@@ -199,7 +205,10 @@
                 "MaxAttempts": 6,
                 "BackoffRate": 2
             }],
-            "ResultPath": null,
+            "ResultSelector": {
+              "Input.$": "$$.Execution.Input"
+            },
+            "OutputPath": "$.Input",
             "End": true
           }
         }
@@ -233,11 +242,26 @@
       "Next": "Create Grid?"
     },
     "Order Error": {
-      "Type": "Pass",
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
       "Parameters": {
-        "Input.$": "$$.Execution.Input",
-        "Error.$": "States.StringToJson($.Cause)"
+        "FunctionName": "${OrderErrorHandlerFunctionArn}",
+        "Payload": {
+          "Error.$": "States.StringToJson($.Cause)",
+          "order_id.$": "$$.Execution.Input.order_id",
+          "status": "error"
+        }
       },
+      "Retry": [{
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+      }],
+      "ResultSelector": {
+        "Input.$": "$$.Execution.Input"
+      },
+      "OutputPath": "$.Input",
       "Next": "Notify User"
     },
     "Create Grid?": {
@@ -245,15 +269,15 @@
       "Choices": [
         {
           "Not": {
-            "Variable": "$.Input.grid",
+            "Variable": "$.grid",
             "IsPresent": true
           },
           "Next": "Notify User"
         },
         {
-          "Variable": "$.Input",
+          "Variable": "$.grid",
           "IsPresent": true,
-          "Next": "Enqueue Grid Generation"
+          "Next": "Request Grid"
         }
       ]
     },
@@ -269,9 +293,25 @@
       },
       "End": true
     },
-    "Enqueue Grid Generation": {
-      "Type": "Pass",
-      "End": true
-    }
+    "Request Grid": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sqs:sendMessage.waitForTaskToken",
+            "HeartbeatSeconds": 10800,
+            "Parameters": {
+              "MessageBody": {
+                "order_id.$": "$$.Execution.Input.order_id",
+                "TaskToken.$": "$$.Task.Token"
+              },
+              "QueueUrl": "${GridDataQueueUrl}"
+            },
+            "ResultPath": "$.TaskResult",
+            "Catch": [{
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.TaskResult",
+                "Next": "Order Error"
+            }],
+            "Next": "Notify User",
+            "Comment": "enqueue request for grid generation"
+          }
   }
 }

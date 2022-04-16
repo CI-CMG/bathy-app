@@ -19,9 +19,10 @@ logger.setLevel(log_level)
 TABLE = os.getenv('ORDERS_TABLE', default='bathy-orders')
 
 
-def update_order(order_id, status='FAILURE'):
+def update_item(order_id, dataset, status='FAILURE'):
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(TABLE)
+
     now = datetime.now(timezone.utc).isoformat(timespec='seconds')
     # expire records 60 days after last update
     ttl = int(time.time()) + (60 * 24 * 60 * 60)
@@ -31,33 +32,33 @@ def update_order(order_id, status='FAILURE'):
     response = table.update_item(
         Key={
             'PK': 'ORDER#' + order_id,
-            'SK': 'ORDER'
+            'SK': 'DATASET#' + dataset
         },
-        UpdateExpression='SET #status = :status, last_update = :now, #ttl = :ttl',
+        UpdateExpression='SET #new_status = :status, last_update = :now, #ttl = :ttl',
         ExpressionAttributeValues={
             ':status': status,
             ':now': now,
             ':ttl': ttl
         },
         ExpressionAttributeNames={
-            "#status": "status",
+            "#new_status": "status",
             "#ttl": "TTL"
         }
     )
-    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+    if (response['ResponseMetadata']['HTTPStatusCode'] != 200):
         raise Exception("failed to update item")
 
 
 def lambda_handler(event, context):
     """
-    handle errors in the order-specific processing part of StepFunction. Includes update of the DynamoDB item
+    handle errors in the dataset-specific processing part of StepFunction. Includes update of the DynamoDB item
     and may eventually include notification
     """
     try:
         order_id = event['order_id']
         status = event['status']
         dataset = event['type']
-        update_order(order_id, status)
+        update_item(order_id, dataset, status)
 
         return {'status': 'SUCCESS'}
 
@@ -65,3 +66,4 @@ def lambda_handler(event, context):
         # generally due to missing required parameter in payload
         logger.error(e)
         return {'status': 'FAILURE'}
+

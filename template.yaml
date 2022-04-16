@@ -99,6 +99,15 @@ Resources:
       Tags:
         project: "csb-pilot"
 
+  OrderErrorHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: order_error_handler/
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Description: "handle errors in the order-specific section of StepFunction"
+      Tags:
+        project: "csb-pilot"
+
   FormatPointQueryFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -116,36 +125,6 @@ Resources:
       Description: "insert a new order record into DynamoDB"
       Tags:
         project: "csb-pilot"
-
-  StageCsbDataFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: stage_csb_data/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
-      Description: "mock the staging of Athena query results data on the EC2 instance"
-      Tags:
-        project: "csb-pilot"
-      Events:
-        stageCsbDataEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt StageCsbDataQueue.Arn
-            Enabled: true
-
-  StageMultibeamDataFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: stage_multibeam_data/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
-      Description: "mock the staging of multibeam data on the EC2 instance"
-      Tags:
-        project: "csb-pilot"
-      Events:
-        stageMultibeamDataEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt StageMultibeamDataQueue.Arn
-            Enabled: true
 
   UpdateDatasetRecordFunction:
     Type: AWS::Serverless::Function
@@ -189,16 +168,13 @@ Resources:
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
       DefinitionSubstitutions:
         MultibeamCatalogQueueUrl: !Ref MultibeamCatalogQueue
-        StageCsbDataQueueUrl: !Ref StageCsbDataQueue
-        StageMultibeamDataQueueUrl: !Ref StageMultibeamDataQueue
         OrderNotificationQueueUrl: !Ref OrderNotificationQueue
         GridDataQueueUrl: !Ref GridDataQueue
         UpdateDatasetRecordFunctionArn: !GetAtt UpdateDatasetRecordFunction.Arn
-        StageMultibeamDataFunctionArn: !GetAtt StageMultibeamDataFunction.Arn
-        StageCsbDataFunctionArn: !GetAtt StageCsbDataFunction.Arn
         InitializeOrderRecordFunctionArn: !GetAtt InitializeOrderRecordFunction.Arn
         FormatPointQueryFunctionArn: !GetAtt FormatPointQueryFunction.Arn
         DatasetErrorHandlerFunctionArn: !GetAtt DatasetErrorHandlerFunction.Arn
+        OrderErrorHandlerFunctionArn: !GetAtt OrderErrorHandlerFunction.Arn
 #        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
         VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
         AthenaOutputBucket: "s3://csb-pilot-delivery/"
@@ -211,22 +187,6 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: MultibeamCatalogQueue
-      Tags:
-        - Key: project
-          Value: "csb-pilot"
-
-  StageCsbDataQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: StageCsbDataQueue
-      Tags:
-        - Key: project
-          Value: "csb-pilot"
-
-  StageMultibeamDataQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: StageMultibeamDataQueue
       Tags:
         - Key: project
           Value: "csb-pilot"
