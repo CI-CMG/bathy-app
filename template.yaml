@@ -69,23 +69,26 @@ Resources:
             Path: /order/{proxy+}
             Method: get
 
-#  MultibeamCatalogFunction:
-#      Type: AWS::Serverless::Function
-#      Properties:
-#        CodeUri: multibeam_catalog_query/
-#        Role: arn:aws:iam::282856304593:role/csb-pilot-role
-#        Description: "placeholder which mocks the querying of MB catalog"
-#        Tags:
-#          project: "csb-pilot"
-#        Environment:
-#          Variables:
-#            MY_AWS_REGION: !Ref AWS::Region
-#        Events:
-#          multibeamCatalogQueryEvent:
-#            Type: SQS
-#            Properties:
-#              Queue: !GetAtt MultibeamCatalogQueue.Arn
-#              Enabled: true
+  MultibeamCatalogFunction:
+      Type: AWS::Serverless::Function
+      Properties:
+        CodeUri: multibeam_catalog_query/
+        Role: arn:aws:iam::282856304593:role/csb-pilot-role
+        Description: "placeholder which mocks the querying of MB catalog"
+        Tags:
+          project: "csb-pilot"
+        Environment:
+          Variables:
+            MY_AWS_REGION: !Ref AWS::Region
+            # TODO replace w/ variable
+            OUTPUT_BUCKET: "csb-pilot-delivery"
+            CATALOG_URL: "https://gis.ngdc.noaa.gov/mapviewer-support/multibeam/catalog.groovy"
+        Events:
+          multibeamCatalogQueryEvent:
+            Type: SQS
+            Properties:
+              Queue: !GetAtt MultibeamCatalogQueue.Arn
+              Enabled: true
 
   DatasetErrorHandlerFunction:
     Type: AWS::Serverless::Function
@@ -159,6 +162,20 @@ Resources:
       CodeUri: verify_dataset_status/
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
       Description: "verify all datasets in order are staged and ready for processing or delivery"
+      Tags:
+        project: "csb-pilot"
+
+  SendEmailViaRelayFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: send_email_via_relay/
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Description: "send email message via NCIS email relay"
+      VpcConfig:
+        SecurityGroupIds:
+          - sg-0220bb1b0f1717bd8
+        SubnetIds:
+          - subnet-00046143f1dcc8109
       Tags:
         project: "csb-pilot"
 
