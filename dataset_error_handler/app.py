@@ -19,6 +19,37 @@ logger.setLevel(log_level)
 TABLE = os.getenv('ORDERS_TABLE', default='bathy-orders')
 
 
+def update_item(order_id, dataset, output_location=None, status='SUCCEEDED'):
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(TABLE)
+
+    now = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    # expire records 60 days after last update
+    ttl = int(time.time()) + (60 * 24 * 60 * 60)
+
+    # TODO add constraint to reject update if item does not already exist
+    # use ExpressionAttributeNames since status,ttl are reserved words
+    response = table.update_item(
+        Key={
+            'PK': 'ORDER#' + order_id,
+            'SK': 'DATASET#' + dataset
+        },
+        UpdateExpression="SET #status = :status, last_update = :now, #ttl = :ttl, output_location = :output_location",
+        ExpressionAttributeValues={
+            ':status': status,
+            ':now': now,
+            ':ttl': ttl,
+            ':output_location': output_location
+        },
+        ExpressionAttributeNames={
+            "#status": "status",
+            "#ttl": "TTL"
+        }
+    )
+    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+        raise Exception("failed to update item")
+
+
 def update_order(order_id, status='FAILURE'):
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(TABLE)
@@ -57,8 +88,9 @@ def lambda_handler(event, context):
         order_id = event['order_id']
         status = event['status']
         dataset = event['type']
-        update_order(order_id, status)
-
+        # update_order(order_id, status)
+        update_item(order_id=order_id, dataset=dataset, status=status)
+        # successfully updated database
         return {'status': 'SUCCESS'}
 
     except Exception as e:

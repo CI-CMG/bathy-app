@@ -157,6 +157,12 @@ Resources:
           - subnet-00046143f1dcc8109
       Tags:
         project: "csb-pilot"
+      Events:
+        orderNotificationEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrderNotificationQueue.Arn
+            Enabled: true
 
   #
   # State Machine
