@@ -14,6 +14,7 @@ Globals:
     Environment:
       Variables:
         LOGLEVEL: DEBUG
+        ORDERS_TABLE: "bathy-orders"
 
 Resources:
   AutogridApi:
@@ -164,6 +165,14 @@ Resources:
             Queue: !GetAtt OrderNotificationQueue.Arn
             Enabled: true
 
+  ReprocessCsbDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: reprocess_csb_data/
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Description: "used by S3 Batch Operations to modify and partition original BDP data into new files"
+      Tags:
+        project: "csb-pilot"
   #
   # State Machine
   #
