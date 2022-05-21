@@ -43,6 +43,17 @@ def valid_geocoords(lonStr, latStr):
     return -180 <= lon <= 180 and -90 <= lat <= 90
 
 
+def upload_to_s3(bucket, obj_key, data):
+    with io.BytesIO() as f:
+        # write CSV header
+        f.write(bytes('ENTRY_DATE,H3,LON,LAT,DEPTH,TIME,PLATFORM_NAME,PROVIDER\n', 'utf-8'))
+
+        for line in data:
+            f.write(bytes(line, 'utf-8'))
+        f.seek(0)
+        s3_client.upload_fileobj(f, bucket, obj_key)
+
+
 def lambda_handler(event, context):
     # logger.debug(event)
 
@@ -60,85 +71,65 @@ def lambda_handler(event, context):
 
     try:
         obj_key = parse.unquote(task['s3Key'], encoding='utf-8')
+        filename = obj_key.split('/')[-1]
         bucket_name = task['s3BucketArn'].split(':')[-1]
         output_bucket_name = 'bathy-csb-data'
-        logger.info(f"Got task: process file {bucket_name}/{obj_key}")
+        logger.debug(f"Got task: process file {bucket_name}/{obj_key}")
 
-        # file handles for each part of the incoming file. Key is H3 index for the partition
-        output_files = {}
+        # dict of lists where key is H3 index for the partition, and list
+        # contains each record for that partition
+        partitions = {}
 
         obj = s3.Object(bucket_name, obj_key)
         entry_date = extract_date_from_filename(obj.key)
-        # WARNING: loads entire file into memory. may not scale for really large extracts
+        # WARNING: loads entire file into memory. may not scale for really large files
         lines = obj.get()['Body'].iter_lines()
         # skip first line (assumed to be header)
         next(lines)
 
-        with io.BytesIO() as f:
-            # write CSV header
-            f.write(bytes('ENTRY_DATE,H3,LON,LAT,DEPTH,TIME,PLATFORM_NAME,PROVIDER\n', 'utf-8'))
-            line_counter = 0
-            bad_records = 0
-            for line in lines:
-                # unique_id, file_uuid, lon, lat, depth, obstime, platform_name, provider = line.decode().split(',')
-                fields = line.decode().split(',')
-                lon = fields[2].strip()
-                lat = fields[3].strip()
+        line_counter = 0
+        bad_records = 0
+        for line in lines:
+            # unique_id, file_uuid, lon, lat, depth, obstime, platform_name, provider = line.decode().split(',')
+            fields = line.decode().split(',')
+            lon = fields[2].strip()
+            lat = fields[3].strip()
 
-                # skip any record w/ invalid lon, lat coords
-                if not valid_geocoords(lon, lat):
-                    logger.warning(f'bad coordinates: {lon}, {lat}')
-                    bad_records = bad_records + 1
-                    continue
+            # skip any record w/ invalid lon, lat coords
+            if not valid_geocoords(lon, lat):
+                logger.warning(f'bad coordinates: {lon}, {lat}')
+                bad_records += 1
+                continue
 
-                line_counter = line_counter + 1
-                # replace two fields from old format w/ new
-                fields[0] = entry_date
-                h3_index = h3.geo_to_h3(float(lat), float(lon), 1)
-                fields[1] = h3_index
-                output_line = ','.join(fields) + '\n'
-                f.write(bytes(output_line, 'utf-8'))
+            line_counter += 1
+            # replace two fields from old format w/ new
+            fields[0] = entry_date
+            h3_index = h3.geo_to_h3(float(lat), float(lon), 1)
+            fields[1] = h3_index
 
-            f.seek(0)
-            filename = obj_key.split('/')[-1]
+            # first record in this h3 tile
+            if h3_index not in partitions.keys():
+                partitions[h3_index] = []
+
+            partitions[h3_index].append(','.join(fields) + '\n')
+
+        # store reprocessed data in output bucket
+        for h3_index in partitions:
             output_obj_key = f"{h3_index}/{filename}"
-            s3_client.upload_fileobj(f, output_bucket_name, output_obj_key)
+            upload_to_s3(output_bucket_name, output_obj_key, partitions[h3_index])
 
-            # if h3_index in output_files.keys():
-            #     # file already opened and initialized w/ header
-            #     file_handle = output_files[h3_index]
-            # else:
-            #     file_handle = init_output_file(filename, h3_index)
-            #     output_files[h3_index] = file_handle
-
-            # file_handle.write(','.join(fields) + '\n')
-            # end for each line loop
-        # output file closed
-
-        # file_content = file.get()['Body'].read().decode('utf-8')
-        # lines = file_content.splitlines()
-        # print(len(lines))
-        # print(lines[0])
-        # print(lines[1])
-        # print(lines[2])
-        # object = s3_client.get_object(Bucket=bucket_name, Key=obj_key)
-        # counter = 0
-        # for line in object['Body'].read().splitlines():
-        #     decoded_line = line.decode('utf-8')
-        #     print(f"{counter}: {decoded_line}")
-        #     counter = counter + 1
-
-        if line_counter > 0:
+        if line_counter:
             result_code = 'Succeeded'
-            # TODO
-            result_string = f"{line_counter} records written across x partitions. {bad_records} invalid records."
-            logger.info(f"file {obj.key}: {result_string}")
-            # logger.info(f'file {obj.key}: {line_counter} records written across {len(output_files.keys())} partitions')
+            result_string = f"{line_counter} records written across {len(partitions.keys())} partitions."
+            if bad_records:
+                result_string += f" {bad_records} invalid records."
+            logger.info(f"file {filename}: {result_string}")
+
         else:
             # TODO better to raise Exception here?
             result_code = 'PermanentFailure'
             result_string = "no valid records"
-            logger.warning(f"file {obj.key}: {result_string}")
+            logger.warning(f"file {filename}: {result_string}")
 
     except ClientError as error:
         logger.error(f"ClientError: {str(error)}")
