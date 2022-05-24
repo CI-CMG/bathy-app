@@ -21,7 +21,8 @@ from botocore.exceptions import ClientError
 import h3
 
 logger = logging.getLogger(__name__)
-logger.setLevel('DEBUG')
+logger.setLevel('INFO')
+
 
 s3 = boto3.resource('s3')
 s3_client = s3.meta.client
@@ -58,7 +59,7 @@ def upload_to_s3(bucket, obj_key, data):
         for line in data:
             f.write(bytes(line, 'utf-8'))
         f.seek(0)
-        # s3_client.upload_fileobj(f, bucket, obj_key)
+        #s3_client.upload_fileobj(f, bucket, obj_key)
         bucket.upload_fileobj(f, obj_key)
 
 
@@ -103,6 +104,7 @@ def memory_based_processing(obj, filename):
     output_bucket = s3.Bucket(OUTPUT_BUCKET_NAME)
     for h3_index in partitions:
         output_obj_key = f"csv/{h3_index}/{filename}"
+        # logger.debug('storing {len(partitions[h3_index]} records in file {output_obj_key}...')
         upload_to_s3(output_bucket, output_obj_key, partitions[h3_index])
 
     return [line_counter, bad_records, len(partitions.keys())]
@@ -128,7 +130,7 @@ def download_file_from_s3(obj):
     logger.debug(f'downloading file {filename}...')
     obj.download_file(filepath)
     file_size_in_mb = round((os.path.getsize(filepath) / 1048576), 2)
-    logger.info(f'downloaded {file_size_in_mb} MB')
+    logger.debug(f'downloaded {file_size_in_mb} MB')
     return filepath
 
 
@@ -144,8 +146,8 @@ def upload_file_to_s3(filename):
         logger.warning(msg)
         raise Exception(msg)
 
-    # e.g. /tmp/csv/81447ffffffffff/20220301_c693417ef6a8caeccb660b5a228af576_pointData.csv -> 81447ffffffffff/20220301_c693417ef6a8caeccb660b5a228af576_pointData.csv
-    obj_key = '/'.join(filename.split('/')[-2:])
+    # e.g. /tmp/csv/81447ffffffffff/20220301_c693417ef6a8caeccb660b5a228af576_pointData.csv -> csv/81447ffffffffff/20220301_c693417ef6a8caeccb660b5a228af576_pointData.csv
+    obj_key = '/'.join(filename.split('/')[-3:])
 
     try:
         s3.Object(OUTPUT_BUCKET_NAME, obj_key).upload_file(filename)
@@ -154,7 +156,7 @@ def upload_file_to_s3(filename):
         raise e
 
     file_size_in_mb = round((os.path.getsize(filename) / 1048576), 2)
-    logger.info(f'uploaded {file_size_in_mb} MB')
+    logger.debug(f'uploaded {file_size_in_mb} MB')
 
     return obj_key
 
@@ -182,22 +184,21 @@ def filesystem_based_processing(obj, filename):
             line_counter += 1
             # replace two fields from old format w/ new
             fields[0] = entry_date
-            h3_index = h3.geo_to_h3(float(lat), float(lon), 1)
+            h3_index = h3.geo_to_h3(float(lat), float(lon), H3_RESOLUTION)
             fields[1] = h3_index
-
+            # logger.debug(f'h3 index is {h3_index}')
             if h3_index in output_files.keys():
                 # file already opened and initialized w/ header
                 file_handle = output_files[h3_index]
             else:
                 file_handle = init_output_file(filename, h3_index)
                 output_files[h3_index] = file_handle
-
             file_handle.write(','.join(fields) + '\n')
 
     # close all output files and upload
     for fh in output_files.values():
-        obj_key = upload_file_to_s3(fh.name)
         fh.close()
+        obj_key = upload_file_to_s3(fh.name)
 
     return [line_counter, bad_records, len(output_files)]
 
@@ -211,7 +212,7 @@ def read_large_file(file_handler):
 def remove_files_from_temp_dir():
     for path, currentDirectory, files in os.walk("/tmp"):
         for file in files:
-            logger.debug(f"removing {os.path.join(path, file)}...")
+            # logger.debug(f"removing {os.path.join(path, file)}...")
             os.remove(os.path.join(path, file))
 
 
@@ -238,13 +239,13 @@ def lambda_handler(event, context):
         logger.debug(f"Got task: process file {bucket_name}/{obj_key}")
 
         obj = s3.Object(bucket_name, obj_key)
-        logger.info(f"file {obj_key} has {obj.content_length} bytes")
+        logger.debug(f"file {obj_key} has {obj.content_length} bytes")
 
         if obj.content_length < 1000000:
-            logger.debug('using memory_based_processing...')
+            # logger.debug('using memory_based_processing...')
             valid_count, invalid_count, partition_count = memory_based_processing(obj, filename)
         else:
-            logger.debug('using filesystem_based_processing...')
+            # logger.debug('using filesystem_based_processing...')
             valid_count, invalid_count, partition_count = filesystem_based_processing(obj, filename)
 
         if valid_count:
