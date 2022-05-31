@@ -1,3 +1,6 @@
+"""
+    WARNING: this is now deprecated in favor of the send_email_via_relay lambda
+"""
 import boto3
 import logging
 import json

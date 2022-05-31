@@ -1,3 +1,6 @@
+"""
+    WARNING: this is now deprecated in favor of the multibeam_catalog_query lambda
+"""
 import boto3
 import logging
 import json
