@@ -15,6 +15,9 @@ Globals:
       Variables:
         LOGLEVEL: DEBUG
         ORDERS_TABLE: "bathy-orders"
+        ATHENA_DATABASE: "bathymetry"
+        ATHENA_TABLE: "csb_h3_parquet"
+        ATHENA_OUTPUT_BUCKET: "s3://csb-data-pickup/"
 
 Resources:
   AutogridApi:
@@ -171,6 +174,7 @@ Resources:
       CodeUri: reprocess_csb_data/
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
       Description: "used by S3 Batch Operations to modify and partition original BDP data into new files"
+      Timeout: 180
       Tags:
         project: "csb-pilot"
   #
@@ -194,6 +198,9 @@ Resources:
         VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
         AthenaOutputBucket: "s3://csb-pilot-delivery/"
 
+  # TODO - add state machines for csb_data_summary and Recreate_CSB_Table
+
+  # TODO - add EventBridge rules for periodically triggering the above state machines
 
   #
   # Queues
