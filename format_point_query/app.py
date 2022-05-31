@@ -72,7 +72,8 @@ def lambda_handler(event, context):
         if 'entry_date' in event['dataset']:
             where_clauses.append("entry_date >= date('" + event['dataset']['entry_date'] + "')")
 
-        query_string = f"SELECT * FROM {DATABASE}.{TABLE} where {' and '.join(where_clauses)}"
+        # WARNING: hardcoded dependency on Glue table structure. TODO read field list from env var?
+        query_string = f"SELECT lon,lat,depth,time,platform,provider FROM {DATABASE}.{TABLE} where {' and '.join(where_clauses)}"
 
         result = copy.deepcopy(event)
         result['QUERY_STRING'] = query_string
