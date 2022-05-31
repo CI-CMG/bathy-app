@@ -5,10 +5,14 @@ import time
 import argparse
 from datetime import timezone
 from datetime import datetime
-from datetime import timedelta
-import smtplib
-from boto3.dynamodb.conditions import Key
+# from datetime import timedelta
+# import smtplib
+# from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
+import requests
+# from requests.exceptions import Timeout
+# from urllib3.exceptions import ConnectTimeoutError
+import uuid
 
 
 def main():
@@ -22,6 +26,7 @@ def main():
 
         for message in messages:
             body = json.loads(message.body)
+            task_token = body['TaskToken']
             try:
                 required_fields_present(body, mandatory_fields)
             except Exception as e:
@@ -31,18 +36,35 @@ def main():
                 message.delete()
                 continue
 
-            task_token = body['TaskToken']
             order_id = body['order_id']
             bbox = body['bbox']
             query_params = body['query_params']
+            s3_key = str(uuid.uuid4()) + '.txt'
+            bucket = s3.Object(bucket_name=BUCKET_NAME, key=s3_key)
+            payload = {'geometry': bbox}
+            if 'platform' in query_params:
+                payload['platform'] = query_params['platform']
+            # TODO add other supported multibeam-specific params
 
             try:
-                # simulate work being done...
-                time.sleep(3)
+                r = requests.get(CATALOG_URL, params=payload, timeout=30)
+                if r.status_code != 200:
+                    raise Exception('invalid response code: ' + str(r.status_code))
+
+                # TODO any line-by-line processing of results
+                # for line in r.iter_lines():
+                #     print(line)
+
+                # put catalog results into bucket
+                result = bucket.put(Body=r.text)
+                # TODO update database w/ location of file
+
+                # notify step function to proceed
                 payload = {
                     'status': 'SUCCESS',
                     'message': 'successfully queried multibeam catalog'
                 }
+                # check response?
                 response = send_success(task_token, payload)
 
             except Exception as e:
@@ -56,7 +78,6 @@ def main():
         logger.debug(f"all messages processed. waiting for {SLEEP_MINUTES} minutes before checking again...")
         time.sleep(SLEEP_MINUTES*60)
     # end of infinite while loop
-
 
 
 def required_fields_present(payload, field_list):
@@ -81,9 +102,11 @@ def send_failure(task_token, error_code='', error_cause=''):
         cause=error_cause
     )
     return response
+
+
 def update_order_status(order_id, status='NOTIFIED'):
     # construct ISO8601 format string of current time w/o TZ offset
-    #now = datetime.datetime.now(timezone.utc).isoformat(timespec='seconds')[:-6]
+    # now = datetime.datetime.now(timezone.utc).isoformat(timespec='seconds')[:-6]
     now = datetime.now(timezone.utc).isoformat(timespec='seconds')
     # expire records 60 days after last update
     ttl = int(time.time()) + (60 * 24 * 60 * 60)
@@ -94,15 +117,17 @@ def update_order_status(order_id, status='NOTIFIED'):
                 'PK': pk,
                 'SK': 'ORDER'
             },
-            UpdateExpression='SET #status = :status, last_update = :timestamp',
+            UpdateExpression='SET #status = :status, last_update = :timestamp, #ttl = :ttl',
             ExpressionAttributeValues={
                 ':status': status,
                 ':timestamp': now,
                 ':pk': pk,
-                ':sk': 'ORDER'
+                ':sk': 'ORDER',
+                ':ttl': ttl
             },
             ExpressionAttributeNames={
-                "#status": "status"
+                "#status": "status",
+                "#ttl": "ttl"
             },
             ConditionExpression="PK = :pk and SK = :sk"
         )
@@ -128,11 +153,15 @@ if __name__ == '__main__':
     SLEEP_MINUTES = 1                     # wait time before checking queue again
     QUEUE_NAME = 'MultibeamCatalogQueue'
     ORDERS_TABLE = 'bathy-orders'
+    BUCKET_NAME = 'csb-pilot-delivery'
+    CATALOG_URL = 'https://gis.ngdc.noaa.gov/mapviewer-support/multibeam/catalog.groovy'
 
     session = boto3.Session(profile_name=args.profile)
     sqs = session.resource('sqs')
     dynamodb = session.resource('dynamodb')
     client = boto3.client('stepfunctions')
+    s3 = session.resource('s3')
+
     queue = sqs.get_queue_by_name(QueueName=QUEUE_NAME)
     table = dynamodb.Table(ORDERS_TABLE)
 
