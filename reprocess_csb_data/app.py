@@ -20,9 +20,9 @@ import boto3
 from botocore.exceptions import ClientError
 import h3
 
+# TODO set logging level from env var
 logger = logging.getLogger(__name__)
 logger.setLevel('INFO')
-
 
 s3 = boto3.resource('s3')
 s3_client = s3.meta.client
@@ -30,7 +30,13 @@ s3_client = s3.meta.client
 # approx 607,220 km2/hexagon or 418 km/side
 H3_RESOLUTION = 1
 
-OUTPUT_BUCKET_NAME = 'bathy-csb-data'
+# NCPP
+# OUTPUT_BUCKET_NAME = 'bathy-csb-data'
+
+# NCIS
+OUTPUT_BUCKET_NAME = 'csb-data'
+
+OUTOUT_FILE_HEADER = 'ENTRY_DATE,H3,LON,LAT,DEPTH,TIME,PLATFORM_NAME,PROVIDER\n'
 OUTPUT_DIR = '/tmp/csv'
 INCOMING_DIR = '/tmp/incoming'
 
@@ -46,24 +52,27 @@ def valid_geocoords(lonStr, latStr):
     try:
         lon = float(lonStr)
         lat = float(latStr)
-    except:
+    except ValueError:
         return False
     return -180 <= lon <= 180 and -90 <= lat <= 90
 
 
-def upload_to_s3(bucket, obj_key, data):
+def upload_data_to_s3(bucket, obj_key, data):
     with io.BytesIO() as f:
         # write CSV header
-        f.write(bytes('ENTRY_DATE,H3,LON,LAT,DEPTH,TIME,PLATFORM_NAME,PROVIDER\n', 'utf-8'))
+        f.write(bytes(OUTOUT_FILE_HEADER, 'utf-8'))
 
         for line in data:
             f.write(bytes(line, 'utf-8'))
         f.seek(0)
-        #s3_client.upload_fileobj(f, bucket, obj_key)
+        logger.debug('storing {len(data)} records in S3 key {obj_key}...')
         bucket.upload_fileobj(f, obj_key)
 
 
 def memory_based_processing(obj, filename):
+    """"
+    in-memory processing strategy. Faster but unable to accommodate large files
+    """
     # dict of lists where key is H3 index for the partition, and list
     # contains each record for that partition
     partitions = {}
@@ -77,7 +86,8 @@ def memory_based_processing(obj, filename):
     line_counter = 0
     bad_records = 0
     for line in lines:
-        # unique_id, file_uuid, lon, lat, depth, obstime, platform_name, provider = line.decode().split(',')
+        # WARNING: hardcoded dependency on incoming file format
+        # UNIQUE_ID,FILE_UUID,LON,LAT,DEPTH,TIME,PLATFORM_NAME,PROVIDER
         fields = line.decode().split(',')
         lon = fields[2].strip()
         lat = fields[3].strip()
@@ -104,33 +114,30 @@ def memory_based_processing(obj, filename):
     output_bucket = s3.Bucket(OUTPUT_BUCKET_NAME)
     for h3_index in partitions:
         output_obj_key = f"csv/{h3_index}/{filename}"
-        # logger.debug('storing {len(partitions[h3_index]} records in file {output_obj_key}...')
-        upload_to_s3(output_bucket, output_obj_key, partitions[h3_index])
+        upload_data_to_s3(output_bucket, output_obj_key, partitions[h3_index])
 
-    return [line_counter, bad_records, len(partitions.keys())]
+    return line_counter, bad_records, len(partitions.keys())
 
 
 def init_output_file(filename, partition):
     os.makedirs(f'{OUTPUT_DIR}/{partition}', exist_ok=True)
     f = open(f'{OUTPUT_DIR}/{partition}/{filename}', "w")
-    # WARNING: hardcoded dependency on incoming file format conventions
-    f.write('ENTRY_DATE,H3,LON,LAT,DEPTH,TIME,PLATFORM_NAME,PROVIDER\n')
+    f.write(OUTOUT_FILE_HEADER)
     return f
 
 
 def download_file_from_s3(obj):
     """
     download file from S3 using specified key
-    :param filename: S3 object key
+    :param obj: S3 object key
     :return: fully-qualified file name of downloaded file
     """
     os.makedirs(INCOMING_DIR, exist_ok=True)
     filename = obj.key.split('/')[-1]
     filepath = f'{INCOMING_DIR}/{filename}'
-    logger.debug(f'downloading file {filename}...')
     obj.download_file(filepath)
     file_size_in_mb = round((os.path.getsize(filepath) / 1048576), 2)
-    logger.debug(f'downloaded {file_size_in_mb} MB')
+    logger.debug(f'downloaded {filename} ({file_size_in_mb} MB)')
     return filepath
 
 
@@ -146,7 +153,8 @@ def upload_file_to_s3(filename):
         logger.warning(msg)
         raise Exception(msg)
 
-    # e.g. /tmp/csv/81447ffffffffff/20220301_c693417ef6a8caeccb660b5a228af576_pointData.csv -> csv/81447ffffffffff/20220301_c693417ef6a8caeccb660b5a228af576_pointData.csv
+    # e.g. /tmp/csv/81447ffffffffff/20220301_c693417ef6a8caeccb660b5a228af576_pointData.csv ->
+    #          csv/81447ffffffffff/20220301_c693417ef6a8caeccb660b5a228af576_pointData.csv
     obj_key = '/'.join(filename.split('/')[-3:])
 
     try:
@@ -156,12 +164,14 @@ def upload_file_to_s3(filename):
         raise e
 
     file_size_in_mb = round((os.path.getsize(filename) / 1048576), 2)
-    logger.debug(f'uploaded {file_size_in_mb} MB')
-
+    logger.debug(f'uploaded object {obj_key} ({file_size_in_mb} MB)')
     return obj_key
 
 
 def filesystem_based_processing(obj, filename):
+    """"
+    file processing strategy using ephemeral disk storage. Slower but able to accommodate large files
+    """
     original_file = download_file_from_s3(obj)
     line_counter = 0
     bad_records = 0
@@ -186,19 +196,15 @@ def filesystem_based_processing(obj, filename):
             fields[0] = entry_date
             h3_index = h3.geo_to_h3(float(lat), float(lon), H3_RESOLUTION)
             fields[1] = h3_index
-            # logger.debug(f'h3 index is {h3_index}')
-            if h3_index in output_files.keys():
-                # file already opened and initialized w/ header
-                file_handle = output_files[h3_index]
-            else:
-                file_handle = init_output_file(filename, h3_index)
-                output_files[h3_index] = file_handle
-            file_handle.write(','.join(fields) + '\n')
+            if h3_index not in output_files.keys():
+                output_files[h3_index] = init_output_file(filename, h3_index)
+
+            output_files[h3_index].write(','.join(fields) + '\n')
 
     # close all output files and upload
     for fh in output_files.values():
         fh.close()
-        obj_key = upload_file_to_s3(fh.name)
+        upload_file_to_s3(fh.name)
 
     return [line_counter, bad_records, len(output_files)]
 
@@ -212,7 +218,7 @@ def read_large_file(file_handler):
 def remove_files_from_temp_dir():
     for path, currentDirectory, files in os.walk("/tmp"):
         for file in files:
-            # logger.debug(f"removing {os.path.join(path, file)}...")
+            logger.debug(f"removing {os.path.join(path, file)}...")
             os.remove(os.path.join(path, file))
 
 
@@ -258,7 +264,7 @@ def lambda_handler(event, context):
         else:
             # TODO better to raise Exception here?
             result_code = 'PermanentFailure'
-            result_string = "no valid records"
+            result_string = f"no valid records. {invalid_count} invalid records"
             logger.warning(f"file {filename}: {result_string}")
 
     except ClientError as error:
