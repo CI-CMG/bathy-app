@@ -11,10 +11,12 @@ import boto3
 from boto3.dynamodb.conditions import Key
 import time
 
+SMTP_HOST = '10.58.150.68'
+SMTP_PORT = 25
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table('bathy-orders')
 sender_address = 'mb.info@noaa.gov'
-server = smtplib.SMTP('10.58.150.68', 25)
+server = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
 
 # setup logging
 log_level = os.getenv('LOGLEVEL', default='WARNING').upper()
@@ -28,6 +30,7 @@ logger.setLevel(log_level)
 
 
 def send_email(recipient, message):
+    server.connect(host=SMTP_HOST, port=SMTP_PORT)
     server.sendmail(sender_address, recipient, message)
     server.quit()
 
@@ -40,7 +43,7 @@ def format_message(recipient, url):
 To: {recipient}
 Subject: Bathymetry Data Request
 
-Your data request is ready and can be downloaded from {url}.  The data will be available until {expiration_date.strftime('%B %w, %Y')}.
+Your data request is ready and can be downloaded from {url}.  The data will be available until {expiration_date.strftime('%B %-d, %Y')}.
     """
 
 
