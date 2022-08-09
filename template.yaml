@@ -47,6 +47,10 @@ Resources:
       Description: "create a new order"
       Tags:
         project: "bathymetry"
+#      Environment:
+#        Variables:
+# TODO work around circular dependency
+#          ORDER_ENDPOINT_URL: !Sub "${AutogridApi.ApiEndpoint}/order/"
       Timeout: 3
       Handler: app.lambda_handler
       Events:

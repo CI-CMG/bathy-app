@@ -24,6 +24,8 @@ logger.setLevel(log_level)
 
 
 def lambda_handler(event, context):
+    # print(os.getenv('ORDER_ENDPOINT_URL'))
+
     # random UUID to identify order and step function execution
     order_id = str(uuid.uuid4())
 
@@ -68,9 +70,11 @@ def lambda_handler(event, context):
         if response['ResponseMetadata']['HTTPStatusCode'] != 200:
             raise StateMachineException('error executing state machine')
 
-        # TODO add URL to check the status of the given order
+        # construct endpoint URL as workaround to using env variable
+        endpoint_url = f"https://{event['headers']['host']}{event['rawPath']}/"
         response_body = {
-            "message": f"extract request {order_id} created."
+            "message": f"extract request {order_id} created.",
+            "url": endpoint_url + order_id
         }
 
         return {
