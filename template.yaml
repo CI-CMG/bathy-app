@@ -1,9 +1,18 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  bathy-app
+  resources supporting the bathy extract system to subset and (optionally) grid CSB and multibeam data
 
-  SAM Template for Autogrid 2.0
+Parameters:
+  EnvType:
+    Description: Environment type.
+    Default: prod
+    Type: String
+    AllowedValues: [prod, dev, test]
+    ConstraintDescription: must specify prod, dev, or test.
+
+Conditions:
+  CreateTestResources: !Equals [!Ref EnvType, test]
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
@@ -13,19 +22,19 @@ Globals:
     Runtime: python3.9
     Environment:
       Variables:
-        LOGLEVEL: DEBUG
+        LOGLEVEL: WARNING
         ORDERS_TABLE: "bathy-orders"
-        ATHENA_DATABASE: "bathymetry"
-        ATHENA_TABLE: "csb_h3_parquet"
-        ATHENA_OUTPUT_BUCKET: "s3://csb-data-pickup/"
-
+        ATHENA_DATABASE: "dcdb"
+        ATHENA_TABLE: "csb_parquet"
+        ATHENA_OUTPUT_BUCKET: "s3://order-pickup/"
 Resources:
   AutogridApi:
     Type: AWS::Serverless::HttpApi
     Properties:
-      Description: "Autogrid API"
+      Description: !If [CreateTestResources, 'test instance of Autogrid API', 'Autogrid API']
       Tags:
         project: "bathymetry"
+        stage: "test"
       CorsConfiguration:
         AllowOrigins:
           - "*"
@@ -41,6 +50,7 @@ Resources:
   #
   CreateOrderFunction:
     Type: AWS::Serverless::Function
+#    DependsOn: AutogridApi
     Properties:
       CodeUri: create_order/
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
@@ -84,7 +94,7 @@ Resources:
         Role: arn:aws:iam::282856304593:role/csb-pilot-role
         Description: "placeholder which mocks the querying of MB catalog"
         Tags:
-          project: "csb-pilot"
+          project: "bathymetry"
         Environment:
           Variables:
             MY_AWS_REGION: !Ref AWS::Region
@@ -105,7 +115,7 @@ Resources:
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
       Description: "handle errors in the dataset-specific section of StepFunction"
       Tags:
-        project: "csb-pilot"
+        project: "bathymetry"
 
   OrderErrorHandlerFunction:
     Type: AWS::Serverless::Function
@@ -114,7 +124,7 @@ Resources:
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
       Description: "handle errors in the order-specific section of StepFunction"
       Tags:
-        project: "csb-pilot"
+        project: "bathymetry"
 
   FormatPointQueryFunction:
     Type: AWS::Serverless::Function
@@ -123,25 +133,25 @@ Resources:
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
       Description: "construct the SQL used by Athena to extract CSB points"
       Tags:
-        project: "csb-pilot"
+        project: "bathymetry"
 
   InitializeOrderRecordFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: insert_order_record/
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
-      Description: "insert a new order record into DynamoDB"
+      Description: "insert a new order record into the order tracking table"
       Tags:
-        project: "csb-pilot"
+        project: "bathymetry"
 
   UpdateDatasetRecordFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: update_dataset_record/
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
-      Description: "update the status of the dataset in order tracking table"
+      Description: "update the status of the dataset into the order tracking table"
       Tags:
-        project: "csb-pilot"
+        project: "bathymetry"
 
   VerifyDatasetStatusFunction:
     Type: AWS::Serverless::Function
@@ -150,7 +160,7 @@ Resources:
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
       Description: "verify all datasets in order are staged and ready for processing or delivery"
       Tags:
-        project: "csb-pilot"
+        project: "bathymetry"
 
   SendEmailViaRelayFunction:
     Type: AWS::Serverless::Function
@@ -164,7 +174,7 @@ Resources:
         SubnetIds:
           - subnet-00046143f1dcc8109
       Tags:
-        project: "csb-pilot"
+        project: "bathymetry"
       Events:
         orderNotificationEvent:
           Type: SQS
@@ -172,15 +182,15 @@ Resources:
             Queue: !GetAtt OrderNotificationQueue.Arn
             Enabled: true
 
-  ReprocessCsbDataFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: reprocess_csb_data/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
-      Description: "used by S3 Batch Operations to modify and partition original BDP data into new files"
-      Timeout: 180
-      Tags:
-        project: "csb-pilot"
+#  ReprocessCsbDataFunction:
+#    Type: AWS::Serverless::Function
+#    Properties:
+#      CodeUri: reprocess_csb_data/
+#      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+#      Description: "used by S3 Batch Operations to modify and partition original BDP data into new files"
+#      Timeout: 180
+#      Tags:
+#        project: "csb-pilot"
   #
   # State Machine
   #
@@ -202,39 +212,49 @@ Resources:
         VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
         AthenaOutputBucket: "s3://csb-pilot-delivery/"
 
-  # TODO - add state machines for csb_data_summary and Recreate_CSB_Table
-
-  # TODO - add EventBridge rules for periodically triggering the above state machines
-
   #
   # Queues
   #
   MultibeamCatalogQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: MultibeamCatalogQueue
+      QueueName: !If [CreateTestResources, 'MultibeamCatalogQueue-test', 'MultibeamCatalogQueue']
       Tags:
         - Key: project
-          Value: "csb-pilot"
+          Value: "bathymetry"
+        - Key: stack-name
+          Value: !Ref AWS::StackName
+        - Key: env-type
+          Value: !Ref EnvType
 
   OrderNotificationQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: OrderNotificationQueue
+      QueueName: !If [ CreateTestResources, 'OrderNotificationQueue-test', 'OrderNotificationQueue' ]
       Tags:
         - Key: project
-          Value: "csb-pilot"
+          Value: "bathymetry"
+        - Key: stack-name
+          Value: !Ref AWS::StackName
+        - Key: env-type
+          Value: !Ref EnvType
 
   GridDataQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: GridDataQueue
+      QueueName: !If [ CreateTestResources, 'GridDataQueue-test', 'GridDataQueue' ]
       Tags:
         - Key: project
           Value: "csb-pilot"
-
+        - Key: stack-name
+          Value: !Ref AWS::StackName
+        - Key: env-type
+          Value: !Ref EnvType
 
 Outputs:
   AutogridApiUrl:
     Description: "API endpoint for orders"
     Value: !Sub "${AutogridApi.ApiEndpoint}/order/"
+  EnvType:
+    Description: "EnvironmentType"
+    Value: !Ref EnvType
