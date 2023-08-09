@@ -63,7 +63,7 @@ def lambda_handler(event, context):
             where_clauses.append("provider = '" + event['dataset']['provider'] + "'")
 
         if 'platform' in event['dataset']:
-            where_clauses.append("platform = '" + event['dataset']['platform'] + "'")
+            where_clauses.append("platform_name = '" + event['dataset']['platform'] + "'")
 
         if 'date' in event['dataset']:
             where_clauses.append("time >= date('" + event['dataset']['date'] + "')")
@@ -73,7 +73,7 @@ def lambda_handler(event, context):
             where_clauses.append("entry_date >= date('" + event['dataset']['entry_date'] + "')")
 
         # WARNING: hardcoded dependency on Glue table structure. TODO read field list from env var?
-        query_string = f"SELECT lon,lat,depth,time,platform,provider FROM {DATABASE}.{TABLE} where {' and '.join(where_clauses)}"
+        query_string = f"SELECT lon,lat,depth,time,platform_name,provider FROM {DATABASE}.{TABLE} where {' and '.join(where_clauses)}"
 
         result = copy.deepcopy(event)
         result['QUERY_STRING'] = query_string
