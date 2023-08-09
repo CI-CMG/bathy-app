@@ -10,3 +10,15 @@ profile = "mfa"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
+
+[test.deploy.parameters]
+stack_name = "bathy-app-test"
+tags = 'project="bathymetry" stage="test"'
+resolve_s3 = true
+s3_prefix = "bathy-app-test"
+region = "us-east-1"
+profile = "mfa"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "EnvType=\"test\""
+image_repositories = []
