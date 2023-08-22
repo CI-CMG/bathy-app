@@ -7,15 +7,8 @@ import uuid
 from datetime import datetime
 from datetime import timezone
 
-# setup logging
-log_level = os.getenv('LOGLEVEL', default='WARNING').upper()
-try:
-    log_level = getattr(logging, log_level)
-except:
-    # use default in case of invalid log level
-    log_level = getattr(logging, 'WARNING')
-logger = logging.getLogger(__name__)
-logger.setLevel(log_level)
+logger = logging.getLogger()
+logger.setLevel(os.environ.get("LOGLEVEL", "WARNING"))
 
 TABLE = os.getenv('ORDERS_TABLE', default='bathy-orders')
 

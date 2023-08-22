@@ -1,5 +1,4 @@
 import json
-
 import pytest
 from create_order import app
 

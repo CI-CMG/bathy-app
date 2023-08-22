@@ -13,25 +13,20 @@ import time
 
 SMTP_HOST = '10.58.150.68'
 SMTP_PORT = 25
+TABLE = os.getenv('ORDERS_TABLE', default='bathy-orders')
+SENDER_ADDRESS = os.getenv("SENDER", 'mb.info@noaa.gov')
+
 dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('bathy-orders')
-sender_address = 'mb.info@noaa.gov'
+table = dynamodb.Table(TABLE)
 server = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
 
-# setup logging
-log_level = os.getenv('LOGLEVEL', default='WARNING').upper()
-try:
-    log_level = getattr(logging, log_level)
-except:
-    # use default in case of invalid log level
-    log_level = getattr(logging, 'WARNING')
-logger = logging.getLogger(__name__)
-logger.setLevel(log_level)
+logger = logging.getLogger()
+logger.setLevel(os.environ.get("LOGLEVEL", "WARNING"))
 
 
 def send_email(recipient, message):
     server.connect(host=SMTP_HOST, port=SMTP_PORT)
-    server.sendmail(sender_address, recipient, message)
+    server.sendmail(SENDER_ADDRESS, recipient, message)
     server.quit()
 
 
@@ -54,6 +49,8 @@ def get_order(order_id):
         ProjectionExpression="PK, SK, email, output_location"
     )
     items = response['Items']
+    print('ORDER#' + order_id)
+    print(items)
     # should be one ORDER item and at least one DATASET item
     if len(items) < 2:
         raise Exception(f'missing item(s) found for order ${order_id}')

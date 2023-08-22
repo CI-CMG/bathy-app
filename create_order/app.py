@@ -4,35 +4,55 @@ from datetime import datetime
 # import csb_support
 import logging
 import os
-import utils
-from utils import IllegalArgumentException
-from utils import StateMachineException
+# import utils
+# from utils import IllegalArgumentException
+# from utils import StateMachineException
 import uuid
 import time
 import copy
+import jsonschema
+
+STATE_MACHINE_ARN = os.environ.get("STATE_MACHINE_ARN")
+
+logger = logging.getLogger()
+logger.setLevel(os.environ.get("LOGLEVEL", "WARNING"))
+
+# load payload schema definition
+with open('pointstore_payload_schema.json', 'r') as file:
+    payload_schema = json.load(file)
 
 
-# setup logging
-log_level = os.getenv('LOGLEVEL', default='WARNING').upper()
-try:
-    log_level = getattr(logging, log_level)
-except:
-    # use default in case of invalid log level
-    log_level = getattr(logging, 'WARNING')
-logger = logging.getLogger(__name__)
-logger.setLevel(log_level)
+def valid_bbox(bbox):
+    if not bbox:
+        return False
+    if isinstance(bbox, str):
+        coords = [float(i) for i in bbox.split(',')]
+    else:
+        coords = bbox
+    if len(coords) != 4:
+        return False
+    if coords[0] < -180 or coords[0] > 180 or coords[2] < -180 or coords[2] > 180:
+        return False
+    if coords[1] < -90 or coords[1] > 90 or coords[3] < -90 or coords[3] > 90:
+        return False
+    # crosses antimeridian
+    if coords[0] >= coords[2]:
+        return False
+    if coords[1] == coords[3]:
+        return False
+    return True
 
 
 def lambda_handler(event, context):
     # print(os.getenv('ORDER_ENDPOINT_URL'))
+    if not STATE_MACHINE_ARN:
+        raise Exception('missing environment variable for Step Function')
 
     # random UUID to identify order and step function execution
     order_id = str(uuid.uuid4())
 
     client = boto3.client('stepfunctions')
-    # TODO get from env
-    # step_function_arn = 'arn:aws:states:us-east-1:282856304593:stateMachine:FlowcontrolTest'
-    step_function_arn = 'arn:aws:states:us-east-1:282856304593:stateMachine:BathymetryStateMachine-agTM4lMdyLPz'
+    # step_function_arn = 'arn:aws:states:us-east-1:282856304593:stateMachine:BathymetryStateMachine-agTM4lMdyLPz'
 
     try:
         if 'body' not in event:
@@ -44,10 +64,24 @@ def lambda_handler(event, context):
         # logger.debug(attributes)
         # logger.debug(bbox)
 
-        # TODO validate payload
+        # validate payload
+        try:
+            jsonschema.validate(instance=payload, schema=payload_schema)
+        except jsonschema.exceptions.ValidationError as e:
+            raise Exception(f'invalid payload format: {e.message}')
+
+        # temporarily accommodate legacy bbox string
+        if isinstance(payload['bbox'], str):
+            try:
+                payload['bbox'] = [float(i.strip()) for i in payload['bbox'].split(',')]
+            except ValueError as e:
+                raise Exception('invalid payload format: bbox string must contain only numbers')
+
+        if not valid_bbox(payload['bbox']):
+            raise Exception(f'invalid payload format - bad bbox coordinates')
 
         response = client.start_execution(
-            stateMachineArn=step_function_arn,
+            stateMachineArn=STATE_MACHINE_ARN,
             name=order_id,
             input=json.dumps(payload)
         )
@@ -121,3 +155,11 @@ def lambda_handler(event, context):
             },
             'body': json.dumps(e.args[0])
         }
+
+
+class IllegalArgumentException(Exception):
+    pass
+
+
+class StateMachineException(Exception):
+    pass
