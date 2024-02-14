@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Pointstore order payload",
-  "description": "payload to create a new pointstore request",
+  "title": "Autogrid order payload",
+  "description": "payload to create a new Autogrid request",
   "type": "object",
   "properties": {
     "order_id": {
@@ -9,22 +9,22 @@
       "description": "internally assigned unique order identifier"
     },
     "bbox": {
-          "oneOf": [
-            {
-              "type": "array",
-              "items": {
-              	"type": "number"
-              },
-              "minItems": 4,
-              "maxItems": 4
-            },
-            {
-             "type": "string",
-              "minLength": 7
-            }
-           ],
-            "description": "list of geographic coordinates in units of decimal degrees. format: minx, miny, maxx, maxy"
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4
         },
+        {
+          "type": "string",
+          "minLength": 7
+        }
+      ],
+      "description": "list of geographic coordinates in units of decimal degrees. format: minx, miny, maxx, maxy"
+    },
     "email": {
       "description": "email address which will receive order notifications",
       "format": "email",
@@ -34,16 +34,24 @@
       "type": "object",
       "properties": {
         "resolution": {
-          "description": "generated grid cell size in meters",
           "type": "number",
           "minimum": 1,
-          "maximum": 1000
+          "maximum": 1000,
+          "description": "generated grid cell size in meters"
         },
         "format": {
-          "description": "format code for generated grid",
           "type": "number",
           "minimum": 1,
-          "maximum": 111
+          "maximum": 111,
+          "description": "format code for generated grid"
+        },
+        "background": {
+          "type": "string",
+          "enum": [
+            "etopo",
+            "gebco"
+          ],
+          "description": "background fill used by mbgrid"
         }
       },
       "required": [
@@ -53,58 +61,135 @@
     "datasets": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/dataset"
-      }
+        "anyOf": [
+          {"$ref": "#/$defs/multibeam_dataset"},
+          {"$ref": "#/$defs/csb_dataset"}
+      	]
+      },
+      "minItems": 1
     }
   },
   "additionalProperties": false,
   "required": [
     "email",
-    "bbox"
+    "bbox",
+    "datasets"
   ],
   "$defs": {
-    "dataset": {
+    "multibeam_dataset": {
       "type": "object",
       "properties": {
-        "type": {
-          "type": "string",
-          "description": "dataset type",
-          "enum": [
-            "csb",
-            "multibeam"
-          ]
-        },
-        "provider": {
-          "type": "string",
-          "description": "trusted node name. only used for csb"
-        },
-        "platform": {
-          "type": "string",
-          "description": "platform, aka ship or vessel name"
-        },
+        "label": {"const": "multibeam"},
+        "processing_level": {
+            "type": "string",
+            "enum": [
+              "raw",
+              "processed"
+            ],
+            "description": "limit results to data of the specified processing level. Applies only to multibeam"
+          },
+        "archive_date": {"$ref": "#/$defs/archive_date"},
+        "collection_date": {"$ref": "#/$defs/collection_date"},
+        "surveys": {"$ref": "#/$defs/surveys"},
+        "platforms": {"$ref": "#/$defs/platforms"},
+        "providers": {"$ref": "#/$defs/providers"}
+      },
+      "required": [ "label"]
+    },
+    "csb_dataset": {
+      "type": "object",
+      "properties": {
+        "label": {"const": "csb"},
         "unique_id": {
           "type": "string",
-          "description": "identifier assigned by the provider which should uniquely identify the combination of provider and platform name"
+          "description": "identifier assigned by the provider which should uniquely identify the combination of provider and platform name. Only applies to CSB"
         },
-        "collection_date": {
+        "archive_date": {"$ref": "#/$defs/archive_date"},
+        "collection_date": {"$ref": "#/$defs/collection_date"},
+        "platforms": {"$ref": "#/$defs/platforms"},
+        "providers": {"$ref": "#/$defs/providers"}
+      },
+      "required": [ "label"]
+    },
+    "archive_date": {
+      "type": "object",
+      "properties": {
+        "start": {
           "type": "string",
           "format": "date",
-          "description": "date on which the data were collected. Format: YYYY-MM-DD"
+          "description": "start of date range, inclusive"
         },
-        "archive_date": {
+        "end": {
           "type": "string",
           "format": "date",
-          "description": "date on which the data were received at the DCDB. Format: YYYY-MM-DD"
-        },
-        "cruise": {
-          "type": "string",
-          "description": "cruise on which the data were collected. Only used for multibeam"
+          "description": "end of date range, inclusive"
         }
       },
+      "description": "date on which the data were received at the DCDB. Format: YYYY-MM-DD",
+      "anyOf": [
+        { "required": ["start"] },
+        { "required": ["end"] }
+      ]
+    },
+    "collection_date": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date",
+          "description": "start of date range, inclusive"
+        },
+        "end": {
+          "type": "string",
+          "format": "date",
+          "description": "end of date range, inclusive"
+        }
+      },
+      "description": "date on which the data were collected. Format: YYYY-MM-DD",
+      "anyOf": [
+        { "required": ["start"] },
+        { "required": ["end"] }
+      ]
+    },
+    "surveys": {
+      "type": "object",
+      "properties": {
+        "list_type": {
+          "type": "string",
+          "enum": [
+            "whitelist",
+            "blacklist"
+          ],
+          "description": "include or exclude the provided list of names"
+        },
+        "names": {
+          "type": "array",
+          "description": "list of survey names or ids",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "list of survey ids to either include or exclude. Only applies to multibeam datasets",
       "additionalProperties": false,
       "required": [
-        "type"
+        "list_type",
+        "names"
       ]
+    },
+    "providers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "list of trusted nodes or source institution names"
+    },
+    "platforms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "list of platforms, aka ship or vessel names"
     }
   }
 }
