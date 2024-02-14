@@ -62,9 +62,13 @@
       "type": "array",
       "items": {
         "anyOf": [
-          {"$ref": "#/$defs/multibeam_dataset"},
-          {"$ref": "#/$defs/csb_dataset"}
-      	]
+          {
+            "$ref": "#/$defs/multibeam_dataset"
+          },
+          {
+            "$ref": "#/$defs/csb_dataset"
+          }
+        ]
       },
       "minItems": 1
     }
@@ -79,37 +83,82 @@
     "multibeam_dataset": {
       "type": "object",
       "properties": {
-        "label": {"const": "multibeam"},
+        "label": {
+          "const": "multibeam"
+        },
         "processing_level": {
-            "type": "string",
-            "enum": [
-              "raw",
-              "processed"
-            ],
-            "description": "limit results to data of the specified processing level. Applies only to multibeam"
+          "type": "string",
+          "enum": [
+            "raw",
+            "processed"
+          ],
+          "description": "limit results to data of the specified processing level. Applies only to multibeam"
+        },
+        "archive_date": {
+          "$ref": "#/$defs/archive_date"
+        },
+        "collection_date": {
+          "$ref": "#/$defs/collection_date"
+        },
+        "surveys": {
+          "type": "array",
+          "description": "list of surveys to include. Overrides other dataset filters except processing_level",
+          "items": {
+            "type": "string"
           },
-        "archive_date": {"$ref": "#/$defs/archive_date"},
-        "collection_date": {"$ref": "#/$defs/collection_date"},
-        "surveys": {"$ref": "#/$defs/surveys"},
-        "platforms": {"$ref": "#/$defs/platforms"},
-        "providers": {"$ref": "#/$defs/providers"}
+          "minItems": 1
+        },
+        "exclude_surveys": {
+          "type": "array",
+          "description": "list of surveys to exclude. mutually exclusive with surveys property",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "platforms": {
+          "$ref": "#/$defs/platforms"
+        },
+        "providers": {
+          "$ref": "#/$defs/providers"
+        }
       },
-      "required": [ "label"]
+      "required": [
+        "label"
+      ],
+      "not": {
+        "required": [
+          "surveys",
+          "exclude_surveys"
+        ]
+      }
     },
     "csb_dataset": {
       "type": "object",
       "properties": {
-        "label": {"const": "csb"},
+        "label": {
+          "const": "csb"
+        },
         "unique_id": {
           "type": "string",
           "description": "identifier assigned by the provider which should uniquely identify the combination of provider and platform name. Only applies to CSB"
         },
-        "archive_date": {"$ref": "#/$defs/archive_date"},
-        "collection_date": {"$ref": "#/$defs/collection_date"},
-        "platforms": {"$ref": "#/$defs/platforms"},
-        "providers": {"$ref": "#/$defs/providers"}
+        "archive_date": {
+          "$ref": "#/$defs/archive_date"
+        },
+        "collection_date": {
+          "$ref": "#/$defs/collection_date"
+        },
+        "platforms": {
+          "$ref": "#/$defs/platforms"
+        },
+        "providers": {
+          "$ref": "#/$defs/providers"
+        }
       },
-      "required": [ "label"]
+      "required": [
+        "label"
+      ]
     },
     "archive_date": {
       "type": "object",
@@ -127,8 +176,16 @@
       },
       "description": "date on which the data were received at the DCDB. Format: YYYY-MM-DD",
       "anyOf": [
-        { "required": ["start"] },
-        { "required": ["end"] }
+        {
+          "required": [
+            "start"
+          ]
+        },
+        {
+          "required": [
+            "end"
+          ]
+        }
       ]
     },
     "collection_date": {
@@ -147,34 +204,16 @@
       },
       "description": "date on which the data were collected. Format: YYYY-MM-DD",
       "anyOf": [
-        { "required": ["start"] },
-        { "required": ["end"] }
-      ]
-    },
-    "surveys": {
-      "type": "object",
-      "properties": {
-        "list_type": {
-          "type": "string",
-          "enum": [
-            "whitelist",
-            "blacklist"
-          ],
-          "description": "include or exclude the provided list of names"
+        {
+          "required": [
+            "start"
+          ]
         },
-        "names": {
-          "type": "array",
-          "description": "list of survey names or ids",
-          "items": {
-            "type": "string"
-          }
+        {
+          "required": [
+            "end"
+          ]
         }
-      },
-      "description": "list of survey ids to either include or exclude. Only applies to multibeam datasets",
-      "additionalProperties": false,
-      "required": [
-        "list_type",
-        "names"
       ]
     },
     "providers": {
@@ -182,6 +221,7 @@
       "items": {
         "type": "string"
       },
+      "minItems": 1,
       "description": "list of trusted nodes or source institution names"
     },
     "platforms": {
@@ -189,6 +229,7 @@
       "items": {
         "type": "string"
       },
+      "minItems": 1,
       "description": "list of platforms, aka ship or vessel names"
     }
   }
