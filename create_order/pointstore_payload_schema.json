@@ -104,7 +104,8 @@
           "type": "array",
           "description": "list of surveys to include. Overrides other dataset filters except processing_level",
           "items": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_ -]+$"
           },
           "minItems": 1
         },
@@ -112,7 +113,8 @@
           "type": "array",
           "description": "list of surveys to exclude. mutually exclusive with surveys property",
           "items": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_ -]+$"
           },
           "minItems": 1
         },
@@ -141,6 +143,7 @@
         },
         "unique_id": {
           "type": "string",
+          "pattern": "^[A-Za-z0-9_ -]+$",
           "description": "identifier assigned by the provider which should uniquely identify the combination of provider and platform name. Only applies to CSB"
         },
         "archive_date": {
@@ -219,7 +222,8 @@
     "providers": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_ -]+$"
       },
       "minItems": 1,
       "description": "list of trusted nodes or source institution names"
@@ -227,7 +231,8 @@
     "platforms": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_ -]+$"
       },
       "minItems": 1,
       "description": "list of platforms, aka ship or vessel names"
