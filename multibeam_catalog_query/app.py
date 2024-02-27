@@ -4,17 +4,10 @@ import requests
 import uuid
 import logging
 import os
+from utils import payload_to_sql
 
-
-# setup logging
-log_level = os.getenv('LOGLEVEL', default='WARNING').upper()
-try:
-    log_level = getattr(logging, log_level)
-except:
-    # use default in case of invalid log level
-    log_level = getattr(logging, 'WARNING')
-logger = logging.getLogger(__name__)
-logger.setLevel(log_level)
+logger = logging.getLogger()
+logger.setLevel(os.environ.get("LOGLEVEL", "WARNING"))
 
 output_bucket = os.getenv('OUTPUT_BUCKET')
 catalog_url = os.getenv('CATALOG_URL')
@@ -42,7 +35,7 @@ def send_failure(task_token, error_code='', error_cause=''):
 
 def lambda_handler(event, context):
     """query the multibeam catalog"""
-    logger.debug(event)
+    logger.info(event)
 
     counter = 0
     records = event['Records']
@@ -51,17 +44,23 @@ def lambda_handler(event, context):
         task_token = body['TaskToken']
         order_id = body['order_id']
 
-        # prepare/execute HTTP catalog request. request timeout should < Lambda execution limits
-        payload = {'geometry': body['bbox']}
-        if 'platform' in body['query_params']:
-            payload['platform'] = body['query_params']['platform']
-        # TODO add other supported parameters
+        sql = payload_to_sql(body['query_params'])
+        print(sql)
 
+        params = {
+            "where": sql,
+            "outFields": "DATA_FILE",
+            "returnGeometry": "false",
+            "f": "json"
+        }
         try:
-            r = requests.get(catalog_url, params=payload, timeout=10)
+            r = requests.get(catalog_url, params=params, timeout=10)
             if r.status_code != 200:
                 logger.error('invalid response code: ' + str(r.status_code))
-
+            payload = r.json()
+            names = [x['attributes']['DATA_FILE'] for x in payload['features'] if
+                     x['attributes']['DATA_FILE'] is not None]
+            print(names)
             # process each line of catalog result? count lines?
             # for line in r.iter_lines():
             #     print(line)
