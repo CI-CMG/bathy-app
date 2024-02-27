@@ -1,2 +1,1 @@
-email_validator
 jsonschema

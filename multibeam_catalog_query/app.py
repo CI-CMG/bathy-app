@@ -43,14 +43,18 @@ def lambda_handler(event, context):
         body = json.loads(record['body'])
         task_token = body['TaskToken']
         order_id = body['order_id']
-
+        # expects coords in minx,miny,maxx,maxy order
+        bbox = ','.join([str(i) for i in body['bbox']])
         sql = payload_to_sql(body['query_params'])
         print(sql)
 
         params = {
             "where": sql,
             "outFields": "DATA_FILE",
+            "geometry": bbox,
             "returnGeometry": "false",
+            "geometryType": "esriGeometryEnvelope",
+            "spatialRel": "esriSpatialRelIntersects",
             "f": "json"
         }
         try:
@@ -60,10 +64,7 @@ def lambda_handler(event, context):
             payload = r.json()
             names = [x['attributes']['DATA_FILE'] for x in payload['features'] if
                      x['attributes']['DATA_FILE'] is not None]
-            print(names)
-            # process each line of catalog result? count lines?
-            # for line in r.iter_lines():
-            #     print(line)
+            logger.info(f'{len(names)} multibeam files match request')
 
             # write output
             s3_key = order_id + '_mbfiles.txt'

@@ -90,7 +90,7 @@ Resources:
           Variables:
             # TODO replace w/ variable
             OUTPUT_BUCKET: "csb-pilot-delivery"
-            CATALOG_URL: "https://gis.ngdc.noaa.gov/mapviewer-support/multibeam/catalog.groovy"
+            CATALOG_URL: "https://gis.ngdc.noaa.gov/arcgis/rest/services/test/MB_files_test/MapServer/0/query"
         Events:
           multibeamCatalogQueryEvent:
             Type: SQS
@@ -126,6 +126,13 @@ Resources:
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
       Description: "insert a new order record into the order tracking table"
 
+  InitializeDatasetRecordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: insert_dataset_record/
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Description: "insert a new dataset record into the order tracking table"
+
   UpdateDatasetRecordFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -139,6 +146,12 @@ Resources:
       CodeUri: verify_dataset_status/
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
       Description: "verify all datasets in order are staged and ready for processing or delivery"
+
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
 
   SendEmailViaRelayFunction:
     Type: AWS::Serverless::Function
@@ -175,12 +188,14 @@ Resources:
         GridDataQueueUrl: !Ref GridDataQueue
         UpdateDatasetRecordFunctionArn: !GetAtt UpdateDatasetRecordFunction.Arn
         InitializeOrderRecordFunctionArn: !GetAtt InitializeOrderRecordFunction.Arn
+        InitializeDatasetRecordFunctionArn: !GetAtt InitializeDatasetRecordFunction.Arn
         FormatPointQueryFunctionArn: !GetAtt FormatPointQueryFunction.Arn
         DatasetErrorHandlerFunctionArn: !GetAtt DatasetErrorHandlerFunction.Arn
         OrderErrorHandlerFunctionArn: !GetAtt OrderErrorHandlerFunction.Arn
 #        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
         VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
         AthenaOutputBucket: "s3://order-pickup/"
+        OrderTrackingTable: !Ref OrderTrackingTable
 
 
   #
@@ -256,3 +271,5 @@ Outputs:
   StateMachineArn:
     Description: "Arn for Step Function"
     Value: !Ref BathymetryStateMachine
+  OrderTrackingTable:
+    Value: !Ref OrderTrackingTable

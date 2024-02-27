@@ -5,9 +5,9 @@ logger = logging.getLogger()
 logger.setLevel(os.environ.get("LOGLEVEL", "INFO"))
 
 
-def iso8601_to_utc_timestamp(iso_datestring):
+def iso8601_to_utc_timestamp(datestring):
     # standardize to start of day UTC
-    dt = datetime.fromisoformat(iso_datestring[0:10]+'T00:00:00Z')
+    dt = datetime.fromisoformat(datestring[0:10]+'T00:00:00Z')
     return dt.timestamp()
 
 
@@ -73,9 +73,8 @@ def payload_to_sql(query_params):
         where_clauses = [f'SURVEY_NAME in ({",".join(surveys)})']
 
     if 'processing_level' in query_params:
-        where_clauses.append(f"""DATASET_TYPE_NAME = '{query_params["processing_level"]}'""")
-
-    # TODO bbox
+        processing_level = 'MB RAW' if query_params["processing_level"] == 'raw' else 'MB PROCESSED'
+        where_clauses.append(f"""DATASET_TYPE_NAME = '{processing_level}'""")
 
     return ' and '.join(where_clauses)
 

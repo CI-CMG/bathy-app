@@ -19,7 +19,7 @@ resolve_s3 = true
 s3_prefix = "bathy-app-test"
 region = "us-east-1"
 profile = "mfa"
-confirm_changeset = true
+confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
 parameter_overrides = "EnvType=\"test\""
 image_repositories = []

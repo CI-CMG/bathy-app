@@ -27,14 +27,14 @@
             "Type": "Choice",
             "Choices": [
               {
-                "Variable": "$.type",
+                "Variable": "$.label",
                 "StringEquals": "csb",
                 "Next": "insert CSB record into database"
               },
               {
-                "Variable": "$.type",
+                "Variable": "$.label",
                 "StringEquals": "multibeam",
-                "Next": "insert MB record into database"
+                "Next": "Initialize MB Record"
               }
             ]
           },
@@ -42,13 +42,13 @@
             "Type": "Task",
             "Resource": "arn:aws:states:::dynamodb:putItem",
             "Parameters": {
-              "TableName": "bathy-orders",
+              "TableName": "${OrderTrackingTable}",
               "Item": {
                 "PK": {
                   "S.$": "States.Format('ORDER#{}', $$.Execution.Input.order_id)"
                 },
                 "SK": {
-                  "S.$": "States.Format('DATASET#{}', $.type)"
+                  "S.$": "States.Format('DATASET#{}', $.label)"
                 },
                 "other": {
                   "M.$": "$"
@@ -59,26 +59,31 @@
             "Next": "FormatPointQuery",
             "Comment": "insert dataset record into order tracking database"
           },
-          "insert MB record into database": {
+          "Initialize MB Record": {
             "Type": "Task",
-            "Resource": "arn:aws:states:::dynamodb:putItem",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "OutputPath": "$.Payload",
             "Parameters": {
-              "TableName": "bathy-orders",
-              "Item": {
-                "PK": {
-                  "S.$": "States.Format('ORDER#{}', $$.Execution.Input.order_id)"
-                },
-                "SK": {
-                  "S.$": "States.Format('DATASET#{}', $.type)"
-                },
-                "other": {
-                  "M.$": "$"
-                }
-              }
+              "Payload": {
+                "dataset.$": "$",
+                "order_id.$": "$$.Execution.Input.order_id"
+              },
+              "FunctionName": "arn:aws:lambda:us-east-1:282856304593:function:bathy-app-test-InitializeDatasetRecordFunction-SDdqD56t7H4w:$LATEST"
             },
-            "ResultPath": null,
-            "Next": "Query Multibeam Catalog",
-            "Comment": "insert dataset record into order tracking database"
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3,
+                "BackoffRate": 2
+              }
+            ],
+            "Next": "Query Multibeam Catalog"
           },
           "FormatPointQuery": {
             "Type": "Task",
@@ -123,7 +128,7 @@
               "FunctionName": "${UpdateDatasetRecordFunctionArn}",
               "Payload": {
                 "order_id.$": "$$.Execution.Input.order_id",
-                "type.$": "$.dataset.type",
+                "type.$": "$.dataset.label",
                 "output_location.$": "$.TaskResult.OutputLocation",
                 "status": "complete"
               }
@@ -169,7 +174,7 @@
               "FunctionName": "${DatasetErrorHandlerFunctionArn}",
               "Payload": {
                 "order_id.$": "$$.Execution.Input.order_id",
-                "type.$": "$.type",
+                "type.$": "$.label",
                 "body.$": "$.TaskResult",
                 "status": "error"
               }
@@ -193,7 +198,7 @@
               "FunctionName": "${UpdateDatasetRecordFunctionArn}",
               "Payload": {
                 "order_id.$": "$$.Execution.Input.order_id",
-                "type.$": "$.type",
+                "type.$": "$.label",
                 "body.$": "$.TaskResult",
                 "output_location.$": "$.TaskResult.output_location",
                 "status": "complete"

@@ -13,7 +13,7 @@ class TestMultibeamCatalogQuery:
         return [
             {
                 "name": "test case 0",
-                "expected": "PLATFORM in ('Hi''ialakai','Surveyor') and SOURCE in ('University of New Hampshire, Center for Coastal and Ocean Mapping (UNH/CCOM)') and (START_DATE >= '2013/10/26' and END_DATE <= '2013/10/30') and DATASET_TYPE_NAME = 'processed'",
+                "expected": "PLATFORM in ('Hi''ialakai','Surveyor') and SOURCE in ('University of New Hampshire, Center for Coastal and Ocean Mapping (UNH/CCOM)') and (START_DATE >= '2013/10/26' and END_DATE <= '2013/10/30') and DATASET_TYPE_NAME = 'MB PROCESSED'",
                 "payload": {
                     "label": "multibeam",
                     "providers": [
@@ -33,7 +33,7 @@ class TestMultibeamCatalogQuery:
             },
             {
                 "name": "test case 1",
-                "expected": "SURVEY_NAME in ('KM1319') and DATASET_TYPE_NAME = 'processed'",
+                "expected": "SURVEY_NAME in ('KM1319') and DATASET_TYPE_NAME = 'MB PROCESSED'",
                 "payload": {
                     "label": "multibeam",
                     "providers": [
@@ -55,7 +55,6 @@ class TestMultibeamCatalogQuery:
         assert sql_quote_and_escape(platforms[1]) == expected[1]
 
     def test_payload_to_sql(self, test_data):
-        logger.info(test_data)
         for case in test_data:
             payload = case['payload']
             expected = case['expected']

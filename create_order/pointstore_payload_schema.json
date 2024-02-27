@@ -20,7 +20,7 @@
         },
         {
           "type": "string",
-          "pattern": "^[0-9 ,\\.-]+$",
+          "pattern": "^[0-9 ,.-]+$",
           "minLength": 7
         }
       ],
@@ -126,6 +126,7 @@
           "$ref": "#/$defs/providers"
         }
       },
+      "additionalProperties": false,
       "required": [
         "label"
       ],
@@ -160,6 +161,7 @@
           "$ref": "#/$defs/providers"
         }
       },
+      "additionalProperties": false,
       "required": [
         "label"
       ]
@@ -190,7 +192,8 @@
             "end"
           ]
         }
-      ]
+      ],
+      "additionalProperties": false
     },
     "collection_date": {
       "type": "object",
@@ -218,13 +221,14 @@
             "end"
           ]
         }
-      ]
+      ],
+      "additionalProperties": false
     },
     "providers": {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^[A-Za-z0-9_ -]+$"
+        "pattern": "^[/|()A-Za-z0-9 .,-]+$"
       },
       "minItems": 1,
       "description": "list of trusted nodes or source institution names"
@@ -233,7 +237,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^[A-Za-z0-9_ -]+$"
+        "pattern": "^[/()A-Za-z0-9_ '.,-]+$"
       },
       "minItems": 1,
       "description": "list of platforms, aka ship or vessel names"

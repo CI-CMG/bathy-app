@@ -52,7 +52,6 @@ def lambda_handler(event, context):
     order_id = str(uuid.uuid4())
 
     client = boto3.client('stepfunctions')
-    # step_function_arn = 'arn:aws:states:us-east-1:282856304593:stateMachine:BathymetryStateMachine-agTM4lMdyLPz'
 
     try:
         if 'body' not in event:
@@ -61,30 +60,30 @@ def lambda_handler(event, context):
         payload = json.loads(event['body'])
         logger.debug(payload)
         payload['order_id'] = order_id
-        # logger.debug(attributes)
-        # logger.debug(bbox)
 
         # validate payload
         try:
             jsonschema.validate(instance=payload, schema=payload_schema)
         except jsonschema.exceptions.ValidationError as e:
-            raise Exception(f'invalid payload format: {e.message}')
+            logger.warning(e.message)
+            raise IllegalArgumentException(f'invalid payload format: failed to match JSON Schema')
 
-        # temporarily accommodate legacy bbox string
+        # accommodate legacy bbox string
         if isinstance(payload['bbox'], str):
             try:
                 payload['bbox'] = [float(i.strip()) for i in payload['bbox'].split(',')]
             except ValueError as e:
-                raise Exception('invalid payload format: bbox string must contain only numbers')
+                raise IllegalArgumentException('invalid payload format: bbox string must contain only numbers')
 
         if not valid_bbox(payload['bbox']):
-            raise Exception(f'invalid payload format - bad bbox coordinates')
+            raise IllegalArgumentException(f'invalid payload format - bad bbox coordinates')
 
         response = client.start_execution(
             stateMachineArn=STATE_MACHINE_ARN,
             name=order_id,
             input=json.dumps(payload)
         )
+
         # e.g.
         # {
         #   'executionArn': 'arn:aws:states:us-east-1:282856304593:execution:FlowcontrolTest:67fc3dc1-65bd-4d45-bc47-c49ade6c1a32',
@@ -101,6 +100,7 @@ def lambda_handler(event, context):
         #   }
         # }
         # print(response)
+
         if response['ResponseMetadata']['HTTPStatusCode'] != 200:
             raise StateMachineException('error executing state machine')
 
