@@ -161,7 +161,8 @@ Resources:
       Description: "send email message via NCIS email relay"
       Environment:
         Variables:
-          SENDER: "bathydata@iho.int"
+          #SENDER: "bathydata@iho.int"
+          SENDER: "mb.info@noaa.gov"
       VpcConfig:
         SecurityGroupIds:
           - sg-0220bb1b0f1717bd8
