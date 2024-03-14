@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  resources supporting the bathy extract system to subset and (optionally) grid CSB and multibeam data
+  Create resources supporting the bathy extract system to subset and grid CSB and multibeam data
 
 Parameters:
   EnvType:

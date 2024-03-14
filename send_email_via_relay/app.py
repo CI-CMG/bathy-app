@@ -34,7 +34,7 @@ def format_message(recipient, url):
     now = datetime.now(timezone.utc)
     expiration_date = now + timedelta(days=7)
 
-    return f"""From: NCEI/DCDB Bathymetry Data Manager <{sender_address}>
+    return f"""From: NCEI/DCDB Bathymetry Data Manager <{SENDER_ADDRESS}>
 To: {recipient}
 Subject: Bathymetry Data Request
 
@@ -57,7 +57,7 @@ def get_order(order_id):
     return items
 
 
-def get_dataset_ouput_location(items):
+def get_dataset_output_location(items):
     dataset_item = next(filter(lambda i: i['SK'].startswith('DATASET#') and 'output_location' in i, items))
     # may eventually store explicit 'item' attribute rather then inferring from SortKey
     type = dataset_item['SK'].split('#')[1]
@@ -105,7 +105,7 @@ def lambda_handler(event, context):
         output_location = order_item['output_location'] if 'output_location' in order_item else None
         if not output_location:
             # presumably no grid requested, use first output_location found in dataset items
-            output_location = get_dataset_ouput_location(items)
+            output_location = get_dataset_output_location(items)
 
         # convert s3 location to URL
         bucket_name, filename = output_location.split('/')[-2:]

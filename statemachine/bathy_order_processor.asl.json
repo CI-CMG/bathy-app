@@ -305,7 +305,8 @@
             "Parameters": {
               "MessageBody": {
                 "order_id.$": "$$.Execution.Input.order_id",
-                "TaskToken.$": "$$.Task.Token"
+                "TaskToken.$": "$$.Task.Token",
+                "order_payload.$": "$$.Execution.Input"
               },
               "QueueUrl": "${GridDataQueueUrl}"
             },
