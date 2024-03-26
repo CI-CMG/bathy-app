@@ -35,7 +35,7 @@ def send_failure(task_token, error_code='', error_cause=''):
 
 def lambda_handler(event, context):
     """query the multibeam catalog"""
-    logger.info(event)
+    # logger.info(event)
 
     counter = 0
     records = event['Records']
@@ -43,10 +43,11 @@ def lambda_handler(event, context):
         body = json.loads(record['body'])
         task_token = body['TaskToken']
         order_id = body['order_id']
+        label = body['query_params']['label']
         # expects coords in minx,miny,maxx,maxy order
         bbox = ','.join([str(i) for i in body['bbox']])
         sql = payload_to_sql(body['query_params'])
-        print(sql)
+        logger.info(sql)
 
         params = {
             "where": sql,
@@ -73,17 +74,16 @@ def lambda_handler(event, context):
 
             # respond to step function
             payload = {
-                'status': 'SUCCESS',
-                'message': 'successfully queried multibeam catalog',
+                'label': label,
                 'output_location': f's3://{output_bucket}/{s3_key}'
             }
             logger.debug("sending success to step function")
-            response = send_success(task_token, payload)
+            send_success(task_token, payload)
             counter = counter + 1
 
         except Exception as e:
             logger.error(e)
             logger.debug('sending failure to step function')
-            response = send_failure(task_token, error_code='1', error_cause='catalog query failed')
+            send_failure(task_token, error_code='1', error_cause='catalog query failed')
 
     print(f'processed {counter} out of {len(records)} records')

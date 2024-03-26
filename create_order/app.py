@@ -40,6 +40,11 @@ def valid_bbox(bbox):
         return False
     if coords[1] == coords[3]:
         return False
+
+    # limit size to 10x10 degree box
+    if (coords[2] - coords[0]) > 10 or (coords[3] - coords[1]) > 10:
+        return False
+
     return True
 
 
@@ -68,6 +73,11 @@ def lambda_handler(event, context):
             logger.warning(e.message)
             raise IllegalArgumentException(f'invalid payload format: failed to match JSON Schema')
 
+        # restrict multibeam requests to gridded output
+        mb_dataset = [dataset for dataset in payload['datasets'] if dataset['label'] == 'multibeam']
+        if mb_dataset and 'grid' not in payload:
+            raise IllegalArgumentException(f'Multibeam datasets can only be requested with gridded output')
+
         # accommodate legacy bbox string
         if isinstance(payload['bbox'], str):
             try:
@@ -76,7 +86,7 @@ def lambda_handler(event, context):
                 raise IllegalArgumentException('invalid payload format: bbox string must contain only numbers')
 
         if not valid_bbox(payload['bbox']):
-            raise IllegalArgumentException(f'invalid payload format - bad bbox coordinates')
+            raise IllegalArgumentException(f'invalid payload format - bad bbox coordinates or size exceeds limits')
 
         response = client.start_execution(
             stateMachineArn=STATE_MACHINE_ARN,

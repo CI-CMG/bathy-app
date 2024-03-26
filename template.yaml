@@ -85,7 +85,7 @@ Resources:
       Properties:
         CodeUri: multibeam_catalog_query/
         Role: arn:aws:iam::282856304593:role/csb-pilot-role
-        Description: "placeholder which mocks the querying of MB catalog"
+        Description: "queries the ArcGIS mapservice to get a list of multibeam files matching the filter parameters"
         Environment:
           Variables:
             # TODO replace w/ variable
@@ -111,6 +111,13 @@ Resources:
       CodeUri: order_error_handler/
       Role: arn:aws:iam::282856304593:role/csb-pilot-role
       Description: "handle errors in the order-specific section of StepFunction"
+
+  OrderSuccessFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: order_success/
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Description: "update database and format notification message when order succeeds"
 
   FormatPointQueryFunction:
     Type: AWS::Serverless::Function
@@ -193,6 +200,7 @@ Resources:
         FormatPointQueryFunctionArn: !GetAtt FormatPointQueryFunction.Arn
         DatasetErrorHandlerFunctionArn: !GetAtt DatasetErrorHandlerFunction.Arn
         OrderErrorHandlerFunctionArn: !GetAtt OrderErrorHandlerFunction.Arn
+        OrderSuccessFunctionArn: !GetAtt OrderSuccessFunction.Arn
 #        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
         VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
         AthenaOutputBucket: "s3://order-pickup/"

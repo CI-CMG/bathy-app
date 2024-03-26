@@ -46,7 +46,7 @@ def insert_item(order_id, email, bbox, status='initialized', grid=None):
     response = table.put_item(
         Item=attributes
     )
-    if (response['ResponseMetadata']['HTTPStatusCode'] != 200):
+    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
         raise Exception('insert into database failed')
     return attributes
 
@@ -63,7 +63,7 @@ def lambda_handler(event, context):
 
     try:
 
-        attributes = insert_item(order_id=event['order_id'], email=event['email'], bbox=event['bbox'], grid=grid)
+        attributes = insert_item(order_id=event['order_id'], email=event['email'], bbox=event['bbox'], status='processing', grid=grid)
         # get_item(attributes['PK'], attributes['SK'])
         return json.dumps(attributes)
 

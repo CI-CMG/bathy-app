@@ -7,15 +7,8 @@ from datetime import datetime
 from datetime import timezone
 from boto3.dynamodb.conditions import Key
 
-# setup logging
-log_level = os.getenv('LOGLEVEL', default='WARNING').upper()
-try:
-    log_level = getattr(logging, log_level)
-except:
-    # use default in case of invalid log level
-    log_level = getattr(logging, 'WARNING')
-logger = logging.getLogger(__name__)
-logger.setLevel(log_level)
+logger = logging.getLogger()
+logger.setLevel(os.environ.get("LOGLEVEL", "WARNING"))
 
 TABLE = os.getenv('ORDERS_TABLE', default='bathy-orders')
 dynamodb = boto3.resource('dynamodb')
@@ -69,9 +62,6 @@ def lambda_handler(event, context):
     verify that each dataset in the specified order is staged for further
     processing or delivery
     """
-    if 'order_id' not in event:
-        raise Exception('missing order_id')
-
     order_id = event['order_id']
 
     if not all_datasets_complete(order_id):
@@ -79,7 +69,5 @@ def lambda_handler(event, context):
 
     update_order(order_id, status="data staged")
 
-    return {
-        'order_id': order_id,
-        'status': 'SUCCESS'
-    }
+    # return original payload
+    return event

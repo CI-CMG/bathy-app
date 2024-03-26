@@ -68,22 +68,22 @@ def lambda_handler(event, context):
     try:
         order_id = event['order_id']
         status = event['status']
-        dataset = event['type']
-        output_location = None
-
-        if 'output_location' in event:
-            output_location = event['output_location']
+        dataset = event['label']
+        output_location = event['output_location']
 
         now = datetime.now(timezone.utc).isoformat(timespec='seconds')
         # expire records 60 days after last update
         ttl = int(time.time()) + (60 * 24 * 60 * 60)
 
         update_dataset(order_id=order_id, dataset=dataset, output_location=output_location, status=status, ttl=ttl, now=now)
-        update_order(order_id=order_id, output_location=output_location, status=f'{dataset} complete', ttl=ttl, now=now)
+        #update_order(order_id=order_id, output_location=output_location, status=f'{dataset} complete', ttl=ttl, now=now)
 
-        return {'status': 'SUCCESS'}
+        return {
+            'label': dataset,
+            'output_location': output_location
+        }
 
     except Exception as e:
         # generally due to missing required parameter in payload
         logger.error(e)
-        return {'status': 'FAILURE'}
+        raise e

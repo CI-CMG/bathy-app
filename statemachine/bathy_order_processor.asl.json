@@ -9,49 +9,70 @@
         "Payload.$": "$",
         "FunctionName": "${InitializeOrderRecordFunctionArn}"
       },
-      "Retry": [{
-          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
-          "IntervalSeconds": 2,
-          "MaxAttempts": 6,
-          "BackoffRate": 2
-      }],
-      "ResultPath": null,
-      "Next": "Foreach_Dataset"
-    },
+      "Retry": [
+          {
+            "ErrorEquals": [
+              "Lambda.ServiceException",
+              "Lambda.AWSLambdaException",
+              "Lambda.SdkClientException"
+            ],
+            "IntervalSeconds": 2,
+            "MaxAttempts": 6,
+            "BackoffRate": 2
+          }
+        ],
+        "ResultPath": null,
+        "Next": "Foreach_Dataset"
+      },
     "Foreach_Dataset": {
       "Type": "Map",
       "Iterator": {
         "StartAt": "Dataset_Type",
         "States": {
           "Dataset_Type": {
-            "Type": "Choice",
-            "Choices": [
-              {
-                "Variable": "$.label",
-                "StringEquals": "csb",
-                "Next": "insert CSB record into database"
-              },
-              {
-                "Variable": "$.label",
-                "StringEquals": "multibeam",
-                "Next": "Initialize MB Record"
-              }
-            ]
-          },
-          "insert CSB record into database": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.label",
+                  "StringEquals": "csb",
+                  "Next": "insert CSB record into database"
+                },
+                {
+                  "Variable": "$.label",
+                  "StringEquals": "multibeam",
+                  "Next": "insert multibeam record into database"
+                }
+              ]
+            },
+          "insert multibeam record into database": {
             "Type": "Task",
             "Resource": "arn:aws:states:::dynamodb:putItem",
             "Parameters": {
-              "TableName": "${OrderTrackingTable}",
+              "TableName": "bathy-orders-test",
               "Item": {
                 "PK": {
                   "S.$": "States.Format('ORDER#{}', $$.Execution.Input.order_id)"
                 },
                 "SK": {
                   "S.$": "States.Format('DATASET#{}', $.label)"
+                }
+              }
+            },
+            "ResultPath": null,
+            "Next": "Query Multibeam Catalog",
+            "Comment": "insert dataset record into order tracking database"
+          },
+          "insert CSB record into database": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:putItem",
+            "Parameters": {
+              "TableName": "bathy-orders-test",
+              "Item": {
+                "PK": {
+                  "S.$": "States.Format('ORDER#{}', $$.Execution.Input.order_id)"
                 },
-                "other": {
-                  "M.$": "$"
+                "SK": {
+                  "S.$": "States.Format('DATASET#{}', $.label)"
                 }
               }
             },
@@ -59,67 +80,59 @@
             "Next": "FormatPointQuery",
             "Comment": "insert dataset record into order tracking database"
           },
-          "Initialize MB Record": {
-            "Type": "Task",
-            "Resource": "arn:aws:states:::lambda:invoke",
-            "OutputPath": "$.Payload",
-            "Parameters": {
-              "Payload": {
-                "dataset.$": "$",
-                "order_id.$": "$$.Execution.Input.order_id"
-              },
-              "FunctionName": "arn:aws:lambda:us-east-1:282856304593:function:bathy-app-test-InitializeDatasetRecordFunction-SDdqD56t7H4w:$LATEST"
-            },
-            "Retry": [
-              {
-                "ErrorEquals": [
-                  "Lambda.ServiceException",
-                  "Lambda.AWSLambdaException",
-                  "Lambda.SdkClientException",
-                  "Lambda.TooManyRequestsException"
-                ],
-                "IntervalSeconds": 1,
-                "MaxAttempts": 3,
-                "BackoffRate": 2
-              }
-            ],
-            "Next": "Query Multibeam Catalog"
-          },
           "FormatPointQuery": {
             "Type": "Task",
             "Resource": "arn:aws:states:::lambda:invoke",
             "Parameters": {
               "Payload": {
                 "dataset.$": "$",
-                "bbox.$": "$$.Execution.Input.bbox"
+                "bbox.$": "$$.Execution.Input.bbox",
+                "order_id.$": "$$.Execution.Input.order_id"
               },
               "FunctionName": "${FormatPointQueryFunctionArn}"
             },
-            "Retry": [{
-                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException"
+                ],
                 "IntervalSeconds": 2,
                 "MaxAttempts": 6,
                 "BackoffRate": 2
-            }],
-            "OutputPath": "$.Payload",
-            "Next": "Start Point Extract"
+              }
+            ],
+            "Next": "Start Point Extract",
+            "ResultPath": "$.TaskResult",
+            "OutputPath": "$.TaskResult.Payload"
           },
           "Start Point Extract": {
             "Type": "Task",
             "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
             "Parameters": {
-              "QueryString.$": "$.QUERY_STRING",
+              "QueryString.$": "$.query_string",
               "WorkGroup": "primary",
               "ResultConfiguration": {
-                "OutputLocation": "${AthenaOutputBucket}"
+                "OutputLocation": "s3://order-pickup/"
               }
             },
             "ResultSelector": {
               "QueryExecutionId.$": "$.QueryExecution.QueryExecutionId",
               "OutputLocation.$": "$.QueryExecution.ResultConfiguration.OutputLocation"
             },
-            "ResultPath": "$.TaskResult",
-            "Next": "Update CSB Record"
+            "Next": "Update CSB Record",
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.TaskFailed"
+                ],
+                "Comment": "Athena query error",
+                "Next": "Dataset Error",
+                "ResultPath": "$.TaskResult"
+              }
+            ],
+            "ResultPath": "$.TaskResult"
           },
           "Update CSB Record": {
             "Type": "Task",
@@ -128,27 +141,29 @@
               "FunctionName": "${UpdateDatasetRecordFunctionArn}",
               "Payload": {
                 "order_id.$": "$$.Execution.Input.order_id",
-                "type.$": "$.dataset.label",
+                "label.$": "$.label",
                 "output_location.$": "$.TaskResult.OutputLocation",
                 "status": "complete"
               }
             },
-            "Retry": [{
-                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException"
+                ],
                 "IntervalSeconds": 2,
                 "MaxAttempts": 6,
                 "BackoffRate": 2
-            }],
-            "ResultSelector": {
-              "Input.$": "$$.Execution.Input"
-            },
-            "OutputPath": "$.Input",
-            "End": true
+              }
+            ],
+            "End": true,
+            "OutputPath": "$.Payload"
           },
           "Query Multibeam Catalog": {
             "Type": "Task",
             "Resource": "arn:aws:states:::sqs:sendMessage.waitForTaskToken",
-            "HeartbeatSeconds": 60,
             "Parameters": {
               "MessageBody": {
                 "query_params.$": "$",
@@ -158,14 +173,18 @@
               },
               "QueueUrl": "${MultibeamCatalogQueueUrl}"
             },
-            "ResultPath": "$.TaskResult",
-            "Catch": [{
-                "ErrorEquals": ["States.ALL"],
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
                 "ResultPath": "$.TaskResult",
                 "Next": "Dataset Error"
-            }],
+              }
+            ],
             "Next": "Update Multibeam Record",
-            "Comment": "query external catalog and wait for response"
+            "Comment": "query external catalog and wait for response",
+            "HeartbeatSeconds": 120
           },
           "Dataset Error": {
             "Type": "Task",
@@ -174,22 +193,28 @@
               "FunctionName": "${DatasetErrorHandlerFunctionArn}",
               "Payload": {
                 "order_id.$": "$$.Execution.Input.order_id",
-                "type.$": "$.label",
+                "label.$": "$.label",
                 "body.$": "$.TaskResult",
                 "status": "error"
               }
             },
-            "Retry": [{
-                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException"
+                ],
                 "IntervalSeconds": 2,
                 "MaxAttempts": 6,
                 "BackoffRate": 2
-            }],
+              }
+            ],
+            "End": true,
             "ResultSelector": {
               "Input.$": "$$.Execution.Input"
             },
-            "OutputPath": "$.Input",
-            "End": true
+            "OutputPath": "$.Input"
           },
           "Update Multibeam Record": {
             "Type": "Task",
@@ -198,23 +223,25 @@
               "FunctionName": "${UpdateDatasetRecordFunctionArn}",
               "Payload": {
                 "order_id.$": "$$.Execution.Input.order_id",
-                "type.$": "$.label",
-                "body.$": "$.TaskResult",
-                "output_location.$": "$.TaskResult.output_location",
+                "label.$": "$.label",
+                "output_location.$": "$.output_location",
                 "status": "complete"
               }
             },
-            "Retry": [{
-                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException"
+                ],
                 "IntervalSeconds": 2,
                 "MaxAttempts": 6,
                 "BackoffRate": 2
-            }],
-            "ResultSelector": {
-              "Input.$": "$$.Execution.Input"
-            },
-            "OutputPath": "$.Input",
-            "End": true
+              }
+            ],
+            "End": true,
+            "OutputPath": "$.Payload"
           }
         }
       },
@@ -222,102 +249,156 @@
       "Next": "Verify Dataset Status"
     },
     "Verify Dataset Status": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::lambda:invoke",
-      "Parameters": {
-        "FunctionName": "${VerifyDatasetStatusFunctionArn}",
-        "Payload": {
-          "order_id.$": "$$.Execution.Input.order_id"
-        }
-      },
-      "Retry": [{
-          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
-          "IntervalSeconds": 2,
-          "MaxAttempts": 6,
-          "BackoffRate": 2
-      }],
-      "Catch": [{
-        "ErrorEquals": ["States.ALL"],
-        "Next": "Order Error"
-      }],
-      "ResultSelector": {
-        "Input.$": "$$.Execution.Input"
-      },
-      "OutputPath": "$.Input",
-      "Next": "Create Grid?"
-    },
-    "Order Error": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::lambda:invoke",
-      "Parameters": {
-        "FunctionName": "${OrderErrorHandlerFunctionArn}",
-        "Payload": {
-          "Error.$": "States.StringToJson($.Cause)",
-          "order_id.$": "$$.Execution.Input.order_id",
-          "status": "error"
-        }
-      },
-      "Retry": [{
-          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
-          "IntervalSeconds": 2,
-          "MaxAttempts": 6,
-          "BackoffRate": 2
-      }],
-      "ResultSelector": {
-        "Input.$": "$$.Execution.Input"
-      },
-      "OutputPath": "$.Input",
-      "Next": "Notify User"
-    },
-    "Create Grid?": {
-      "Type": "Choice",
-      "Choices": [
-        {
-          "Not": {
-            "Variable": "$.grid",
-            "IsPresent": true
-          },
-          "Next": "Notify User"
+        "Type": "Task",
+        "Resource": "arn:aws:states:::lambda:invoke",
+        "Parameters": {
+          "FunctionName": "${VerifyDatasetStatusFunctionArn}",
+          "Payload": {
+            "order_id.$": "$$.Execution.Input.order_id",
+            "datasets.$": "$"
+          }
         },
-        {
-          "Variable": "$.grid",
-          "IsPresent": true,
-          "Next": "Request Grid"
-        }
-      ]
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "Lambda.ServiceException",
+              "Lambda.AWSLambdaException",
+              "Lambda.SdkClientException"
+            ],
+            "IntervalSeconds": 2,
+            "MaxAttempts": 6,
+            "BackoffRate": 2
+          }
+        ],
+        "Catch": [
+          {
+            "ErrorEquals": [
+              "States.ALL"
+            ],
+            "Next": "Order Error"
+          }
+        ],
+        "Next": "Create Grid?",
+        "OutputPath": "$.Payload"
+      },
+    "Order Error": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::lambda:invoke",
+        "Parameters": {
+          "FunctionName": "${OrderErrorHandlerFunctionArn}",
+          "Payload": {
+            "Error.$": "States.StringToJson($.Cause)",
+            "order_id.$": "$$.Execution.Input.order_id",
+            "status": "error"
+          }
+        },
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "Lambda.ServiceException",
+              "Lambda.AWSLambdaException",
+              "Lambda.SdkClientException"
+            ],
+            "IntervalSeconds": 2,
+            "MaxAttempts": 6,
+            "BackoffRate": 2
+          }
+        ],
+        "ResultSelector": {
+          "Input.$": "$$.Execution.Input"
+        },
+        "OutputPath": "$.Input",
+        "Next": "Notify User"
+      },
+    "Create Grid?": {
+        "Type": "Choice",
+        "Choices": [
+          {
+            "Variable": "$$.Execution.Input.grid",
+            "IsPresent": true,
+            "Next": "Request Grid"
+          }
+        ],
+        "Default": "Add empty output_location"
+      },
+    "Add empty output_location": {
+      "Type": "Pass",
+      "Next": "Order Success",
+      "Parameters": {
+        "datasets.$": "$.datasets",
+        "order_id.$": "$$.Execution.Input.order_id",
+        "output_location": ""
+      }
     },
     "Notify User": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::sqs:sendMessage",
-      "Parameters": {
-        "QueueUrl": "${OrderNotificationQueueUrl}",
-        "MessageBody": {
-          "email.$": "$.email",
-          "order_id.$": "$.order_id"
-        }
-      },
-      "End": true
-    },
-    "Request Grid": {
-            "Type": "Task",
-            "Resource": "arn:aws:states:::sqs:sendMessage.waitForTaskToken",
-            "HeartbeatSeconds": 10800,
-            "Parameters": {
-              "MessageBody": {
-                "order_id.$": "$$.Execution.Input.order_id",
-                "TaskToken.$": "$$.Task.Token",
-                "order_payload.$": "$$.Execution.Input"
-              },
-              "QueueUrl": "${GridDataQueueUrl}"
-            },
-            "ResultPath": "$.TaskResult",
-            "Catch": [{
-                "ErrorEquals": ["States.ALL"],
-                "ResultPath": "$.TaskResult",
-                "Next": "Order Error"
-            }],
-            "Next": "Notify User",
-            "Comment": "enqueue request for grid generation"
+        "Type": "Task",
+        "Resource": "arn:aws:states:::sqs:sendMessage",
+        "Parameters": {
+          "QueueUrl": "${OrderNotificationQueueUrl}",
+          "MessageBody": {
+            "email.$": "$$.Execution.Input.email",
+            "order_id.$": "$$.Execution.Input.order_id",
+            "message.$": "$.message"
           }
+        },
+        "End": true
+      },
+    "Request Grid": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::sqs:sendMessage.waitForTaskToken",
+        "HeartbeatSeconds": 10800,
+        "Parameters": {
+          "MessageBody": {
+            "order_id.$": "$$.Execution.Input.order_id",
+            "TaskToken.$": "$$.Task.Token",
+            "grid.$": "$$.Execution.Input.grid",
+            "bbox.$": "$$.Execution.Input.bbox",
+            "email.$": "$$.Execution.Input.email",
+            "datasets.$": "$.datasets"
+          },
+          "QueueUrl": "${GridDataQueueUrl}"
+        },
+        "Catch": [
+          {
+            "ErrorEquals": [
+              "States.ALL"
+            ],
+            "ResultPath": "$.TaskResult",
+            "Next": "Order Error"
+          }
+        ],
+        "Next": "Order Success",
+        "Comment": "enqueue request for grid generation"
+      },
+    "Order Success": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::lambda:invoke",
+        "Parameters": {
+          "FunctionName": "${OrderSuccessFunctionArn}",
+          "Payload": {
+            "datasets.$": "$.datasets",
+            "order_id.$": "$$.Execution.Input.order_id",
+            "output_location.$": "$.output_location"
+          }
+        },
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "Lambda.ServiceException",
+              "Lambda.AWSLambdaException",
+              "Lambda.SdkClientException"
+            ],
+            "IntervalSeconds": 2,
+            "MaxAttempts": 6,
+            "BackoffRate": 2
+          }
+        ],
+        "ResultSelector": {
+          "message.$": "$.Payload.message",
+          "email.$": "$$.Execution.Input.email"
+        },
+        "Next": "Notify User",
+        "Comment": "updates database and generates message for notification"
+      }
   }
 }

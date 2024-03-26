@@ -97,23 +97,23 @@ def lambda_handler(event, context):
     records = event['Records']
     for record in records:
         body = json.loads(record['body'])
-        order_id = body['order_id']
-        items = get_order(order_id)
-        order_item = next(filter(lambda i: i['SK'] == 'ORDER', items))
-        recipient = order_item['email']
-
-        output_location = order_item['output_location'] if 'output_location' in order_item else None
-        if not output_location:
-            # presumably no grid requested, use first output_location found in dataset items
-            output_location = get_dataset_output_location(items)
-
-        # convert s3 location to URL
-        bucket_name, filename = output_location.split('/')[-2:]
-        url = f'https://{bucket_name}.s3.amazonaws.com/{filename}'
-
-        msg = format_message(recipient, url)
+        # order_id = body['order_id']
+        # items = get_order(order_id)
+        # order_item = next(filter(lambda i: i['SK'] == 'ORDER', items))
+        recipient = event['email']
+        msg = event['message']
+        # output_location = order_item['output_location'] if 'output_location' in order_item else None
+        # if not output_location:
+        #     # presumably no grid requested, use first output_location found in dataset items
+        #     output_location = get_dataset_output_location(items)
+        #
+        # # convert s3 location to URL
+        # bucket_name, filename = output_location.split('/')[-2:]
+        # url = f'https://{bucket_name}.s3.amazonaws.com/{filename}'
+        #
+        # msg = format_message(recipient, url)
         send_email(recipient, msg)
-        update_order(order_id, "complete")
+        # update_order(order_id, "complete")
 
 
 
