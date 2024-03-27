@@ -341,7 +341,7 @@ if __name__ == '__main__':
     ORDERS_TABLE = 'bathy-orders'
     # INCOMING_DIR = '/Users/jcc/Downloads/'
     INCOMING_DIR = '/home/ec2-user/incoming/'
-    OUTPUT_BUCKET = 'csb-pilot-delivery'
+    OUTPUT_BUCKET = 'order-pickup'
 
     session = boto3.Session(profile_name=args.profile)
     sqs = session.resource('sqs')
