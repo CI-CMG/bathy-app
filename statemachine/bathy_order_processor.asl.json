@@ -363,7 +363,6 @@
             "ErrorEquals": [
               "States.ALL"
             ],
-            "ResultPath": "$.TaskResult",
             "Next": "Order Error"
           }
         ],
