@@ -86,4 +86,4 @@ def lambda_handler(event, context):
             logger.debug('sending failure to step function')
             send_failure(task_token, error_code='1', error_cause='catalog query failed')
 
-    print(f'processed {counter} out of {len(records)} records')
+        print(f'processed {counter} out of {len(records)} records')
