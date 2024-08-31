@@ -68,6 +68,22 @@ Resources:
             Path: /order
             Method: post
 
+  CountPointsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: count_points/
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Description: "count number of points"
+      Timeout: 25
+      Handler: app.lambda_handler
+      Events:
+        bathy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AutogridApi
+            Path: /count
+            Method: get
+
   OrderStatusFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -81,6 +97,20 @@ Resources:
             ApiId: !Ref AutogridApi
 # TODO use {orderid} instead of {proxy+}?
             Path: /order/{proxy+}
+            Method: get
+
+  ListFilesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: list_files/
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Description: "list S3 objects corresponding to given map service query parameters"
+      Events:
+        csb:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AutogridApi
+            Path: /files
             Method: get
 
   MultibeamCatalogFunction:
@@ -251,21 +281,21 @@ Resources:
           Value: !Ref EnvType
 
       AttributeDefinitions:
-        -
-          AttributeName: "PK"
+        - AttributeName: "PK"
           AttributeType: "S"
-        -
-          AttributeName: "SK"
+        - AttributeName: "SK"
           AttributeType: "S"
 
       KeySchema:
-        -
-          AttributeName: "PK"
+        - AttributeName: "PK"
           KeyType: "HASH"
         - AttributeName: "SK"
           KeyType: "RANGE"
 
       BillingMode: "PAY_PER_REQUEST"
+      TimeToLiveSpecification:
+        AttributeName: "TTL"
+        Enabled: True
 
 Outputs:
   AutogridApiUrl:
