@@ -48,7 +48,7 @@ class TestApp:
         }
         assert app.filters_to_where_clause(query_params) == expected
 
-    def test_platform_names(self):
+    def test_platform_whitelist(self):
         bad_names = [
             '"Airwaves "',
             'ANNIE O&apos;SHEA',
@@ -74,7 +74,7 @@ class TestApp:
         assert platform_name_pattern.match(', '.join(good_names)), "should accept valid character(s) in platform name"
         assert platform_name_pattern.match(','.join(good_names)), "should accept valid character(s) in platform name"
 
-    def test_provider_names(self):
+    def test_provider_whitelist(self):
         good_names = [
             'Anonymous',
             'AquaMap',
