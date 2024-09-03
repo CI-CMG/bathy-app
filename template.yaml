@@ -84,6 +84,22 @@ Resources:
             Path: /count
             Method: get
 
+  ListPlatformsAndProvidersFunction:
+      Type: AWS::Serverless::Function
+      Properties:
+        CodeUri: list_platforms/
+        Role: arn:aws:iam::282856304593:role/csb-pilot-role
+        Description: "list the platforms and providers"
+        Timeout: 25
+        Handler: app.lambda_handler
+        Events:
+          bathy:
+            Type: HttpApi
+            Properties:
+              ApiId: !Ref AutogridApi
+              Path: /platforms
+              Method: get
+
   OrderStatusFunction:
     Type: AWS::Serverless::Function
     Properties:
