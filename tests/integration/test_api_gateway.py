@@ -1,6 +1,6 @@
 import os
 from unittest import TestCase
-
+import json
 import boto3
 import requests
 
@@ -14,7 +14,7 @@ class TestApiGateway(TestCase):
 
     @classmethod
     def get_stack_name(cls) -> str:
-        stack_name = os.environ.get("AWS_SAM_STACK_NAME")
+        stack_name = os.environ.get("AWS_SAM_STACK_NAME", 'bathy-app-test')
         if not stack_name:
             raise Exception(
                 "Cannot find env var AWS_SAM_STACK_NAME. \n"
@@ -42,14 +42,30 @@ class TestApiGateway(TestCase):
         stacks = response["Stacks"]
 
         stack_outputs = stacks[0]["Outputs"]
-        api_outputs = [output for output in stack_outputs if output["OutputKey"] == "HelloWorldApi"]
-        self.assertTrue(api_outputs, f"Cannot find output HelloWorldApi in stack {stack_name}")
+        api_name = 'AutogridApiUrl'
+        api_outputs = [output for output in stack_outputs if output["OutputKey"] == api_name]
+        self.assertTrue(api_outputs, f"Cannot find output {api_name} in stack {stack_name}")
 
         self.api_endpoint = api_outputs[0]["OutputValue"]
 
-    def test_api_gateway(self):
-        """
-        Call the API Gateway endpoint and check the response
-        """
-        response = requests.get(self.api_endpoint)
-        self.assertDictEqual(response.json(), {"message": "hello world"})
+    # def test_api_gateway(self):
+    #     """
+    #     Call the API Gateway endpoint and check the response
+    #     """
+    #     response = requests.get(self.api_endpoint)
+    #     self.assertDictEqual(response.json(), {"message": "hello world"})
+
+    def test_bbox_too_big(self):
+        headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
+        payload = '{"email": "john.cartwright@noaa.gov", "bbox": [4,60,5,61], "datasets": [{"label": "csb"}]}'
+        url = self.api_endpoint
+        print(url)
+        response = requests.post('https://v2pd0f288a.execute-api.us-east-1.amazonaws.com/order/', data=payload)
+        print("Status code: ", response.status_code)
+
+        response_Json = response.json()
+        print(response_Json)
+        # print("Printing Post JSON data")
+        # print(response_Json['data'])
+
+        # print("Content-Type is ", response_Json['headers']['Content-Type'])

@@ -1,6 +1,16 @@
 import json
+import os
+import jsonschema
+from jsonschema.exceptions import ValidationError
+from jsonschema import Draft202012Validator
 import pytest
-from create_order import app
+# from create_order import app
+
+
+@pytest.fixture()
+def payload_schema():
+    with open('../../create_order/pointstore_payload_schema.json', 'r') as file:
+        return json.load(file)
 
 
 @pytest.fixture()
@@ -72,12 +82,40 @@ def apigw_event():
     }
 
 
-def test_lambda_handler(apigw_event, mocker):
+def test_payload_validation(payload_schema):
+    csb_payload_json = '''{
+        "email": "a",
+        "bbox": [5,60,6,61],
+        "grid": {
+           "resolution": 30,
+            "format": 3
+        },
+        "datasets": [
+            {
+                "label": "csb",
+                "providers": ["PGS"],
+                "platforms": ["Ramform Vanguard"]
+            }
+        ]
+    }'''
+    payload = json.loads(csb_payload_json)
 
-    ret = app.lambda_handler(apigw_event, "")
-    data = json.loads(ret["body"])
+    with pytest.raises(ValidationError):
+        # jsonschema.validate(instance=payload, schema=payload_schema)
+        Draft202012Validator(payload_schema).validate(payload)
 
-    assert ret["statusCode"] == 200
-    assert "message" in ret["body"]
-    assert data["message"] == "hello world"
-    # assert "location" in data.dict_keys()
+
+
+def test_zero_division():
+    with pytest.raises(ZeroDivisionError):
+        1 / 0
+
+
+# def test_lambda_handler(apigw_event):
+#     ret = app.lambda_handler(apigw_event, "")
+#     data = json.loads(ret["body"])
+#
+#     assert ret["statusCode"] == 200
+#     assert "message" in ret["body"]
+#     assert data["message"] == "hello world"
+#     # assert "location" in data.dict_keys()

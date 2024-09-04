@@ -1,4 +1,5 @@
 import jsonschema
+from  jsonschema.exceptions import ValidationError
 import json
 
 # load payload schema definition
@@ -6,7 +7,7 @@ with open('../../create_order/pointstore_payload_schema.json', 'r') as file:
     payload_schema = json.load(file)
 
 csb_payload_json = '''{
-    "email": "john.cartwright@noaa.gov",
+    "email1": "",
     "bbox": [5,60,6,61],
     "grid": {
        "resolution": 30,
@@ -14,9 +15,9 @@ csb_payload_json = '''{
     },
     "datasets": [
         {
-            "type": "csb",
-            "providers": "PGS",
-            "platforms": "Ramform Vanguard"
+            "label": "csb",
+            "providers": ["PGS"],
+            "platforms": ["Ramform Vanguard"]
         }
     ]
 }'''
@@ -45,12 +46,14 @@ mb_payload_json = '''{
         }
     ]
 }'''
-payload = json.loads(mb_payload_json)
+payload = json.loads(csb_payload_json)
 
 # print(payload_schema)
 try:
     jsonschema.validate(instance=payload, schema=payload_schema)
+except Exception as e:
+    assert type(e) is ValidationError
 
-except jsonschema.exceptions.ValidationError as e:
-    print(e)
-    print(e.message)
+# except jsonschema.exceptions.ValidationError as e:
+#     print(e)
+#     print(e.message)

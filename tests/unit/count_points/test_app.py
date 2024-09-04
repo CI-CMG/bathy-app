@@ -126,6 +126,31 @@ class TestApp:
         for i in good_names:
             assert date_pattern.match(i), "should accept dates with valid character(s) and format"
 
+    def test_build_sql(self):
+        expected = "(lon > -97.0 and lon < -90.0) and (lat > 27.0 and lat < 30.0) " \
+            "and platform_name in ('Ramform Vanguard','Anonymous') " \
+            "and provider in ('PGS','MacGregor') " \
+            "and time >= date('2023-08-01') and entry_date >= date('2023-01-01')"
+
+        query_params = {
+            'bbox': '-97,27,-90,30',
+            'collection_date_start': '2023-08-01',
+            'platforms': 'Ramform Vanguard,Anonymous',
+            'providers': 'PGS,MacGregor',
+            "archive_date_start": '2023-01-01'
+        }
+
+        where_clauses = app.filters_to_where_clause(query_params)
+
+        assert ' and '.join(where_clauses) == expected
+
+    def test_sql_quote_and_escape(self):
+        platforms = ["Hi'ialakai", "Surveyor"]
+        expected = ["'Hi''ialakai'", "'Surveyor'"]
+
+        assert app.sql_quote_and_escape(platforms[0]) == expected[0]
+        assert app.sql_quote_and_escape(platforms[1]) == expected[1]
+
 
 if __name__ == '__main__':
     unittest.main()

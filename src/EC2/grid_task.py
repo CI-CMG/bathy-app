@@ -15,12 +15,18 @@ class GridTask:
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-    def __init__(self, order_id, data_files, grid_params):
+    def __init__(self, order_id, data_files, bbox, grid_params):
         self.order_id = order_id
         self.data_files = data_files
-        self.bbox = grid_params['bbox']
+        self.bbox = bbox
         self.cell_size = grid_params['resolution']
-        self.gridtype = grid_params['format']
+        self.gridtype = '3'
+        if 'format' in grid_params:
+            self.gridtype = grid_params['format']
+        # TODO background grid option
+        self.background = None
+        if 'background' in grid_params:
+            self.background = grid_params['background']
         self.datalist = None
         self.stdout = None
         self.stderr = None
