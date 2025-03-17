@@ -31,11 +31,12 @@ def insert_item(order_id, email, bbox, status='initialized', grid=None):
     now = datetime.now(timezone.utc).isoformat(timespec='seconds')
     # expire records 60 days after creation
     ttl = int(time.time()) + (60 * 24 * 60 * 60)
+    # convert bbox coords to strings to work around "Float types are not supported. Use Decimal types instead." error
     attributes = {
         'PK': 'ORDER#' + order_id,
         'SK': 'ORDER',
         'email': email,
-        'bbox': bbox,
+        'bbox': [str(i) for i in bbox],
         'status': status,
         'last_update': now,
         'TTL': ttl
