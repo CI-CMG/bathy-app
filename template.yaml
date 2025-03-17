@@ -11,31 +11,38 @@ Parameters:
     AllowedValues: [prod, dev, test]
     ConstraintDescription: must specify prod, dev, or test.
 
+  ExecutionRole:
+#    Default: arn:aws:iam::282856304593:role/csb-pilot-role
+    Default: arn:aws:iam::282856304593:role/csb-bathy-lambda-role
+    Type: String
+
 Conditions:
-  CreateTestResources: !Equals [!Ref EnvType, test]
+  ProdEnv: !Equals [!Ref EnvType, prod]
 
 # global tags applied via samconfig.toml profiles
 Globals:
   Function:
     Timeout: 3
     Handler: app.lambda_handler
-    Runtime: python3.9
+    Runtime: python3.11
 
     Environment:
       Variables:
         LOGLEVEL: WARNING
         ORDERS_TABLE: !Ref OrderTrackingTable
+        # data shared between all environments
         ATHENA_DATABASE: "dcdb"
         ATHENA_TABLE: "csb_parquet"
         ATHENA_OUTPUT_BUCKET: "s3://order-pickup/"
-        CONFIG_ENVIRONMENT: !If [CreateTestResources, 'TEST', 'PROD']
-        EXECUTION_ROLE: arn:aws:iam::282856304593:role/csb-pilot-role
+        CONFIG_ENVIRONMENT: !Ref EnvType
+        # TODO update to more specific role
+        EXECUTION_ROLE: !Ref ExecutionRole
 
 Resources:
   AutogridApi:
     Type: AWS::Serverless::HttpApi
     Properties:
-      Description: !If [CreateTestResources, 'test instance of Autogrid API', 'Autogrid API']
+      Description: !If [ ProdEnv, 'Autogrid API', !Sub '${EnvType} instance of Autogrid API']
       CorsConfiguration:
         AllowOrigins:
           - "*"
@@ -53,13 +60,11 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: create_order/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "create a new order"
       Environment:
         Variables:
           STATE_MACHINE_ARN: !Ref BathymetryStateMachine
-      Timeout: 3
-      Handler: app.lambda_handler
       Events:
         bathy:
           Type: HttpApi
@@ -72,10 +77,9 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: count_points/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "count number of points"
       Timeout: 25
-      Handler: app.lambda_handler
       Events:
         bathy:
           Type: HttpApi
@@ -88,10 +92,9 @@ Resources:
       Type: AWS::Serverless::Function
       Properties:
         CodeUri: list_platforms/
-        Role: arn:aws:iam::282856304593:role/csb-pilot-role
+        Role: !Ref ExecutionRole
         Description: "list the platforms and providers"
         Timeout: 25
-        Handler: app.lambda_handler
         Events:
           bathy:
             Type: HttpApi
@@ -104,14 +107,14 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: order_status/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "report on the status of given order"
       Events:
         csb:
           Type: HttpApi
           Properties:
             ApiId: !Ref AutogridApi
-# TODO use {orderid} instead of {proxy+}?
+            # TODO use {orderid} instead of {proxy+}?
             Path: /order/{proxy+}
             Method: get
 
@@ -119,7 +122,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: list_files/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "list S3 objects corresponding to given map service query parameters"
       Events:
         csb:
@@ -133,7 +136,7 @@ Resources:
       Type: AWS::Serverless::Function
       Properties:
         CodeUri: multibeam_catalog_query/
-        Role: arn:aws:iam::282856304593:role/csb-pilot-role
+        Role: !Ref ExecutionRole
         Description: "queries the ArcGIS mapservice to get a list of multibeam files matching the filter parameters"
         Environment:
           Variables:
@@ -151,63 +154,63 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: dataset_error_handler/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "handle errors in the dataset-specific section of StepFunction"
 
   OrderErrorHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: order_error_handler/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "handle errors in the order-specific section of StepFunction"
 
   OrderSuccessFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: order_success/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "update database and format notification message when order succeeds"
 
   FormatPointQueryFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: format_point_query/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "construct the SQL used by Athena to extract CSB points"
 
   InitializeOrderRecordFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: insert_order_record/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "insert a new order record into the order tracking table"
 
   InitializeDatasetRecordFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: insert_dataset_record/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "insert a new dataset record into the order tracking table"
 
   UpdateDatasetRecordFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: update_dataset_record/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "update the status of the dataset into the order tracking table"
 
   VerifyDatasetStatusFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: verify_dataset_status/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "verify all datasets in order are staged and ready for processing or delivery"
 
   SendEmailViaRelayFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: send_email_via_relay/
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Role: !Ref ExecutionRole
       Description: "send email message via NCIS email relay"
       Environment:
         Variables:
@@ -232,7 +235,9 @@ Resources:
     Type: AWS::Serverless::StateMachine
     Properties:
       DefinitionUri: statemachine/bathy_order_processor.asl.json
-      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      # TODO different role for Step Function than for the Lambdas
+#      Role: !Ref ExecutionRole
+      Role: arn:aws:iam::282856304593:role/csb-bathy-sfn-role
       DefinitionSubstitutions:
         MultibeamCatalogQueueUrl: !Ref MultibeamCatalogQueue
         OrderNotificationQueueUrl: !Ref OrderNotificationQueue
@@ -246,8 +251,10 @@ Resources:
         OrderSuccessFunctionArn: !GetAtt OrderSuccessFunction.Arn
 #        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
         VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
+        # TODO avoid hardcoded value here with another Parameter?
         AthenaOutputBucket: "s3://order-pickup/"
         OrderTrackingTable: !Ref OrderTrackingTable
+#        OrderTrackingTable: bathy-orders
 
 
   #
@@ -256,7 +263,7 @@ Resources:
   MultibeamCatalogQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !If [CreateTestResources, 'MultibeamCatalogQueue-test', 'MultibeamCatalogQueue']
+      QueueName: !If [ ProdEnv, 'MultibeamCatalogQueue', !Sub 'MultibeamCatalogQueue-${EnvType}']
       Tags:
         - Key: stack-name
           Value: !Ref AWS::StackName
@@ -266,7 +273,7 @@ Resources:
   OrderNotificationQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !If [ CreateTestResources, 'OrderNotificationQueue-test', 'OrderNotificationQueue' ]
+      QueueName: !If [ ProdEnv, 'OrderNotificationQueue', !Sub 'OrderNotificationQueue-${EnvType}']
       Tags:
         - Key: stack-name
           Value: !Ref AWS::StackName
@@ -276,7 +283,7 @@ Resources:
   GridDataQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !If [ CreateTestResources, 'GridDataQueue-test', 'GridDataQueue' ]
+      QueueName: !If [ ProdEnv, 'GridDataQueue', !Sub 'GridDataQueue-${EnvType}']
       Tags:
         - Key: stack-name
           Value: !Ref AWS::StackName
@@ -289,7 +296,7 @@ Resources:
   OrderTrackingTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !If [ CreateTestResources, 'bathy-orders-test', 'bathy-orders' ]
+      TableName: !If [ ProdEnv, 'bathy-orders', !Sub 'bathy-orders-${EnvType}']
       Tags:
         - Key: stack-name
           Value: !Ref AWS::StackName
@@ -313,6 +320,37 @@ Resources:
         AttributeName: "TTL"
         Enabled: True
 
+#
+# CloudWatch Alarms
+#
+  StaleGridMessageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+        AlarmName: !If [ ProdEnv, 'csb-stale-grid-message-alarm', !Sub 'csb-state-grid-message-alarm-${EnvType}']
+        AlarmDescription: >-
+            # Grid Request Alarm
+    
+            ## generate notification when message(s) remain in queue longer than
+            expected
+        ActionsEnabled: true
+        # TODO create new SNS topic for administrative notifications via email
+        # don't use "OKActions" due to "INSUFFICIENT_DATA -> OK" state changes, i.e. empty queue
+        AlarmActions:
+            - arn:aws:sns:us-east-1:282856304593:csb-email
+        InsufficientDataActions: []
+        MetricName: ApproximateAgeOfOldestMessage
+        Namespace: AWS/SQS
+        Statistic: Maximum
+        Dimensions:
+            - Name: QueueName
+              Value: !GetAtt GridDataQueue.QueueName
+        Period: 60
+        EvaluationPeriods: 1
+        DatapointsToAlarm: 1
+        Threshold: 300
+        ComparisonOperator: GreaterThanThreshold
+        TreatMissingData: missing
+
 Outputs:
   AutogridApiUrl:
     Description: "API endpoint for orders"
@@ -323,5 +361,5 @@ Outputs:
   StateMachineArn:
     Description: "Arn for Step Function"
     Value: !Ref BathymetryStateMachine
-  OrderTrackingTable:
-    Value: !Ref OrderTrackingTable
+#  OrderTrackingTable:
+#    Value: !Ref OrderTrackingTable

@@ -23,3 +23,14 @@ confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 parameter_overrides = "EnvType=\"test\""
 image_repositories = []
+
+
+[dev.deploy.parameters]
+stack_name = "bathy-app-dev"
+parameter_overrides = 'EnvType="dev"'
+resolve_s3 = true
+s3_prefix = "bathy-app-test-dev"
+profile = "mfa"
+region = "us-east-1"
+confirm_changeset = true
+tags = 'project="bathymetry" stage="dev"'
