@@ -57,14 +57,14 @@ def create_sql_from_bbox(bbox_string: str) -> list[str]:
 
 def iso8601_to_utc_timestamp(datestring):
     # standardize to start of day UTC
-    dt = datetime.fromisoformat(datestring[0:10]+'T00:00:00Z')
+    dt = datetime.fromisoformat(datestring[0:10] + 'T00:00:00Z')
     return dt.timestamp()
 
 
 def utc_timestamp_to_iso8601(timestamp):
     datestring = datetime.fromtimestamp(timestamp).isoformat()
     # standardize to start of day UTC
-    return datestring[0:10]+'T00:00:00Z'
+    return datestring[0:10] + 'T00:00:00Z'
 
 
 # prepare strings for SQL by single quoting names and escaping single quotes w/in name
@@ -148,13 +148,6 @@ def lambda_handler(event, context):
             where_clauses = filters_to_where_clause(event['queryStringParameters'])
             if len(where_clauses):
                 sql += f" where {' and '.join(where_clauses)}"
-
-    elif http_method == 'POST':
-        # TODO
-        pass
-    elif http_method == 'OPTIONS':
-        # TODO
-        pass
     else:
         return {
             'statusCode': 405,
@@ -171,20 +164,23 @@ def lambda_handler(event, context):
 
     query_state = None
     check_count = 0
-    while check_count < timeout_in_seconds and query_state != 'SUCCEEDED':
+
+    # Athena Query states: QUEUED | RUNNING | SUCCEEDED | FAILED | CANCELLED
+    while check_count < timeout_in_seconds and (
+            query_state is None or query_state == 'QUEUED' or query_state == 'RUNNING'):
         time.sleep(1)
         response = athena.get_query_execution(QueryExecutionId=query_execution_id)
         query_state = response['QueryExecution']['Status']['State']
         check_count = check_count + 1
 
     if query_state != 'SUCCEEDED':
-        execution_time = round(int(response['QueryExecution']['Statistics']['TotalExecutionTimeInMillis'])*1000)
-        logger.info(f"query completed in approximately {execution_time} seconds")
-
         return {
             'statusCode': 500,
-            'body': json.dumps({'message': 'query took too long to respond'})
+            'body': json.dumps({'message': 'query failed or took too long to respond'})
         }
+
+    execution_time = round(int(response['QueryExecution']['Statistics']['TotalExecutionTimeInMillis']) * 1000)
+    logger.info(f"query completed in approximately {execution_time} seconds")
 
     response = athena.get_query_results(QueryExecutionId=query_execution_id)
     results = []
