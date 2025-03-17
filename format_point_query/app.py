@@ -29,7 +29,10 @@ def lambda_handler(event, context):
     where_clauses += filters_to_where_clause(event['dataset'])
 
     # WARNING: hardcoded dependency on Glue table schema.
-    query_string = f"SELECT lon,lat,depth,time,platform_name,provider FROM {DATABASE}.{TABLE} where {' and '.join(where_clauses)}"
+    if 'format' in event['dataset'] and event['dataset']['format'] == 'compact':
+        query_string = f"SELECT lon,lat,depth,time FROM {DATABASE}.{TABLE} where {' and '.join(where_clauses)}"
+    else:
+        query_string = f"SELECT lon,lat,depth,time,platform_name,provider,unique_id,file_uuid FROM {DATABASE}.{TABLE} where {' and '.join(where_clauses)}"
 
     return {
         'query_string': query_string,

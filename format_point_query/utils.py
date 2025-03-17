@@ -72,5 +72,9 @@ def filters_to_where_clause(filters):
         unique_id = filters['unique_id']
         where_clauses.append(f"unique_id = '{unique_id}'")
 
+    if 'file_uuid' in filters:
+        file_uuid = filters['file_uuid']
+        where_clauses.append(f"file_uuid = '{file_uuid}'")
+
     return where_clauses
 
