@@ -27,7 +27,7 @@
       "description": "list of geographic coordinates in units of decimal degrees. format: minx, miny, maxx, maxy"
     },
     "email": {
-      "description": "email address which will receive order notifications",
+      "description": "email address which will receive order notifications. Empty value or missing element suppresses email notification",
       "format": "email",
       "type": "string"
     },
@@ -40,7 +40,7 @@
           "maximum": 1000,
           "description": "generated grid cell size in meters"
         },
-        "format": {
+        "format_code": {
           "type": "number",
           "minimum": 1,
           "maximum": 111,
@@ -84,7 +84,7 @@
       "type": "object",
       "properties": {
         "label": {
-          "const": "multibeam"
+          "enum": ["multibeam"]
         },
         "processing_level": {
           "type": "string",
@@ -140,9 +140,9 @@
       "type": "object",
       "properties": {
         "label": {
-          "const": "csb"
+          "enum": ["csb"]
         },
-        "format": {
+        "response_format": {
           "type": "string",
           "enum": [
             "full",
