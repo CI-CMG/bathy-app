@@ -28,7 +28,7 @@ def get_order_status(order_id):
         }
     )
     if 'Item' not in response:
-        raise NotFoundException(f'no order found for id ${order_id}')
+        raise NotFoundException(f'no order found for id {order_id}')
 
     return response['Item']
 

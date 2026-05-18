@@ -14,7 +14,10 @@ tar -xzf ${TARFILE}
 
 cd MB-System-${VERSION}
 
-./configure --prefix=/usr/local --disable-mbtools
-
+# autotools build is deprecated
+#./configure --prefix=/usr/local --disable-mbtools
+mkdir build
+cd build
+cmake  -DbuildOpenCV=OFF -DbuildGUIs=off ..
 make
 sudo make install

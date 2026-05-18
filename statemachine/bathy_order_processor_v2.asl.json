@@ -1,0 +1,155 @@
+{
+  "Comment": "orchestrate the processing steps for a bathymetry data request",
+  "StartAt": "insert order record into database",
+  "States": {
+    "insert order record into database": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Output": "{% $states.input %}",
+      "Arguments": {
+        "FunctionName": "${InitializeOrderRecordFunctionArn}",
+        "Payload": "{% $states.input %}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Next": "for each dataset",
+      "Assign": {
+        "order_id": "{% $states.input.order_id %}",
+        "bbox": "{% $states.input.bbox %}"
+      }
+    },
+    "for each dataset": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "what type of dataset?",
+        "States": {
+          "what type of dataset?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Next": "Multibeam Catalog Query",
+                "Condition": "{% $states.input.label = 'multibeam' %}"
+              },
+              {
+                "Next": "Pass",
+                "Condition": "{% $states.input.label = 'csb' %}"
+              }
+            ],
+            "Default": "Unknown Dataset"
+          },
+          "Multibeam Catalog Query": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Output": "{% $states.result.Payload %}",
+            "Arguments": {
+              "FunctionName": "${MultibeamCatalogFunctionArn}",
+              "Payload":{
+                "TaskToken": "{% $states.context.Task.Token %}",
+                "order_id": "{% $order_id %}",
+                "bbox": "{% $bbox %}",
+                "dataset": "{% $states.input %}"
+              }
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL"
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "Dataset Error"
+              }
+            ],
+            "Next": "update multibeam record"
+          },
+          "update multibeam record": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Output": "{% $states.result.Payload %}",
+            "Arguments": {
+              "FunctionName": "arn:aws:lambda:us-east-1:282856304593:function:bathy-app-test-UpdateDatasetRecordFunction-gIGSWZ7woaqj:$LATEST",
+              "Payload": "{% $states.input %}"
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL"
+              }
+            ],
+            "End": true
+          },
+          "Dataset Error": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Output": "{% $states.result.Payload %}",
+            "Arguments": {
+              "FunctionName": "${DatasetErrorHandlerFunctionArn}",
+              "Payload": "{% $states.input %}"
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL"
+              }
+            ],
+            "End": true
+          },
+          "Unknown Dataset": {
+            "Type": "Pass",
+            "End": true
+          },
+          "Pass": {
+            "Type": "Pass",
+            "End": true
+          }
+        }
+      },
+      "End": true,
+      "Items": "{% $states.input.datasets %}"
+    }
+  },
+  "QueryLanguage": "JSONata"
+}

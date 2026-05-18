@@ -43,7 +43,7 @@ class GridTask:
             self.logger.info("mbgrid successfully executed")
         else:
             msg = f'program failed to execute:\n{process.stdout}\n{process.stderr}'
-            self.logger.error(msg)
+            # self.logger.error(msg)
             raise Exception(msg)
 
     def create_datalist(self):
