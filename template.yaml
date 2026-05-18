@@ -24,7 +24,7 @@ Globals:
   Function:
     Timeout: 3
     Handler: app.lambda_handler
-    Runtime: python3.11
+    Runtime: python3.14
 
     Environment:
       Variables:
@@ -32,7 +32,7 @@ Globals:
         ORDERS_TABLE: !Ref OrderTrackingTable
         # data shared between all environments
         ATHENA_DATABASE: "dcdb"
-        ATHENA_TABLE: "csb_parquet"
+        ATHENA_TABLE: "csb_parquet_level1"
         ATHENA_OUTPUT_BUCKET: "s3://order-pickup/"
         CONFIG_ENVIRONMENT: !Ref EnvType
         # TODO update to more specific role
@@ -54,7 +54,7 @@ Resources:
           - OPTIONS
 
   #
-  # Functions
+  # Functions related to API Gateway
   #
   CreateOrderFunction:
     Type: AWS::Serverless::Function
@@ -132,6 +132,21 @@ Resources:
             Path: /files
             Method: get
 
+  #
+  # functions related to order processing step function
+  #
+  MultibeamCatalogFunction2:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: multibeam_catalog_query2/
+      Role: !Ref ExecutionRole
+      Description: "queries the ArcGIS mapservice to get a list of multibeam files matching the filter parameters"
+      Environment:
+        Variables:
+          # TODO replace w/ variable
+          OUTPUT_BUCKET: "order-pickup"
+          CATALOG_URL: " https://gis.ngdc.noaa.gov/arcgis/rest/services/multibeam_files/MapServer/0/query"
+
   MultibeamCatalogFunction:
       Type: AWS::Serverless::Function
       Properties:
@@ -142,7 +157,7 @@ Resources:
           Variables:
             # TODO replace w/ variable
             OUTPUT_BUCKET: "csb-pilot-delivery"
-            CATALOG_URL: "https://gis.ngdc.noaa.gov/arcgis/rest/services/test/MB_files_test/MapServer/0/query"
+            CATALOG_URL: " https://gis.ngdc.noaa.gov/arcgis/rest/services/multibeam_files/MapServer/0/query"
         Events:
           multibeamCatalogQueryEvent:
             Type: SQS
@@ -231,6 +246,30 @@ Resources:
   #
   # State Machine
   #
+  BathymetryStateMachine2:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      DefinitionUri: statemachine/bathy_order_processor_v2.asl.json
+      Role: arn:aws:iam::282856304593:role/csb-bathy-sfn-role
+      DefinitionSubstitutions:
+        MultibeamCatalogQueueUrl: !Ref MultibeamCatalogQueue
+        OrderNotificationQueueUrl: !Ref OrderNotificationQueue
+        GridDataQueueUrl: !Ref GridDataQueue
+        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction2.Arn
+        UpdateDatasetRecordFunctionArn: !GetAtt UpdateDatasetRecordFunction.Arn
+        InitializeOrderRecordFunctionArn: !GetAtt InitializeOrderRecordFunction.Arn
+        InitializeDatasetRecordFunctionArn: !GetAtt InitializeDatasetRecordFunction.Arn
+        FormatPointQueryFunctionArn: !GetAtt FormatPointQueryFunction.Arn
+        DatasetErrorHandlerFunctionArn: !GetAtt DatasetErrorHandlerFunction.Arn
+        OrderErrorHandlerFunctionArn: !GetAtt OrderErrorHandlerFunction.Arn
+        OrderSuccessFunctionArn: !GetAtt OrderSuccessFunction.Arn
+        #        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
+        VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
+        # TODO avoid hardcoded value here with another Parameter?
+        AthenaOutputBucket: "s3://order-pickup/"
+        OrderTrackingTable: !Ref OrderTrackingTable
+  #        OrderTrackingTable: bathy-orders
+
   BathymetryStateMachine:
     Type: AWS::Serverless::StateMachine
     Properties:
