@@ -5,16 +5,41 @@ Description: >
 
 Parameters:
   EnvType:
-    Description: Environment type.
+    Description: Environment type
     Default: prod
     Type: String
     AllowedValues: [prod, dev, test]
-    ConstraintDescription: must specify prod, dev, or test.
+    ConstraintDescription: must specify prod, dev, or test
 
-  ExecutionRole:
-#    Default: arn:aws:iam::282856304593:role/csb-pilot-role
+  LambdaRole:
+    Description: IAM role used by Lambdas
     Default: arn:aws:iam::282856304593:role/csb-bathy-lambda-role
     Type: String
+
+  SnfRole:
+    Description: IAM role use by Step Functions
+    Default: arn:aws:iam::282856304593:role/csb-bathy-sfn-role
+    Type: String
+
+  ParquetPartitionedTable:
+    Description: Parquet files partitioned using H3 level 4 indexes
+    Default: csb_parquet_level4
+    Type: String
+
+  BathyOrdersTable:
+    Description: Athena table of data extract requests
+    Default: bathy-orders
+    Type: String
+
+  AthenaDatabase:
+    Description: Athena database containing all Athena tables used by application
+    Default: dcdb
+    Type: String
+
+  DeliveryBucket:
+    Description: bucket which receives output for public distribution
+    Type: String
+    Default: order-pickup
 
 Conditions:
   ProdEnv: !Equals [!Ref EnvType, prod]
@@ -25,24 +50,126 @@ Globals:
     Timeout: 3
     Handler: app.lambda_handler
     Runtime: python3.14
-
+    Architectures:
+      - x86_64
     Environment:
       Variables:
         LOGLEVEL: WARNING
+        # TODO replace most global env variables with function-specific definitions
         ORDERS_TABLE: !Ref OrderTrackingTable
-        # data shared between all environments
-        ATHENA_DATABASE: "dcdb"
-        ATHENA_TABLE: "csb_parquet_level1"
-        ATHENA_OUTPUT_BUCKET: "s3://order-pickup/"
+        ATHENA_DATABASE: !Ref AthenaDatabase
+        ATHENA_TABLE: !Ref ParquetPartitionedTable
+        ATHENA_OUTPUT_BUCKET: !Sub "s3://${DeliveryBucket}/"
         CONFIG_ENVIRONMENT: !Ref EnvType
-        # TODO update to more specific role
-        EXECUTION_ROLE: !Ref ExecutionRole
 
 Resources:
+  #
+  # resources used by State Machine
+  #
+  BathymetryStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      DefinitionUri: statemachine/bathy_order_processor.asl.json
+      Role: !Ref SnfRole
+      DefinitionSubstitutions:
+        MultibeamCatalogQueueUrl: !Ref MultibeamCatalogQueue
+        OrderNotificationQueueUrl: !Ref OrderNotificationQueue
+        GridDataQueueUrl: !Ref GridDataQueue
+        InsertOrderRecordsFunction: !Ref InsertOrderRecordsFunction
+        MultibeamCatalogFunction: !GetAtt MultibeamCatalogFunction.Arn
+        NotifyUserFunction: !GetAtt NotifyUserFunction.Arn
+        UpdateDatasetRecordFunction: !GetAtt UpdateDatasetRecordFunction.Arn
+        UpdateOrderRecordFunction: !GetAtt UpdateOrderRecordFunction.Arn
+        FormatPointQueryFunction: !GetAtt FormatPointQueryFunction.Arn
+        DatasetErrorHandlerFunction: !GetAtt DatasetErrorHandlerFunction.Arn
+        VerifyDatasetStatusFunction: !GetAtt VerifyDatasetStatusFunction.Arn
+        AthenaOutputBucket: !Sub "s3://${!Ref DeliveryBucket}/"
+        OrderTrackingTable: !Ref OrderTrackingTable
+
+  DatasetErrorHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: dataset_error_handler/
+      Role: !Ref LambdaRole
+      Description: "handle errors in the dataset-specific section of StepFunction"
+
+  FormatPointQueryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: format_point_query/
+      Role: !Ref LambdaRole
+      Description: "construct the SQL used by Athena to extract CSB points"
+      Environment:
+        Variables:
+          # TODO standardize variable names
+          ATHENA_OUTPUT_BUCKET: !Ref DeliveryBucket
+          ATHENA_TABLE: !Ref ParquetPartitionedTable
+          ATHENA_DATABASE: !Ref AthenaDatabase
+
+  InsertOrderRecordsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: insert_order_records/
+      Role:
+        !Ref LambdaRole
+
+  MultibeamCatalogFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: multibeam_catalog_query/
+      Role: !Ref LambdaRole
+      Description: "queries the ArcGIS mapservice to get a list of multibeam files matching the filter parameters"
+      Environment:
+        Variables:
+          OUTPUT_BUCKET: !Ref DeliveryBucket
+          CATALOG_URL: " https://gis.ngdc.noaa.gov/arcgis/rest/services/multibeam_files/MapServer/0/query"
+
+  NotifyUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: notify_user/
+      Role: !Ref LambdaRole
+      Environment:
+        Variables:
+          ORDER_NOTIFICATION_QUEUE_URL: !Ref OrderNotificationQueue
+
+  UpdateDatasetRecordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: update_dataset_record/
+      Role: !Ref LambdaRole
+      Environment:
+        Variables:
+          # TODO standardize variable names
+          ORDERS_TABLE: !Ref BathyOrdersTable
+
+  UpdateOrderRecordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: update_order_record/
+      Role: !Ref LambdaRole
+      Environment:
+        Variables:
+          # TODO standardize variable names
+          ORDERS_TABLE: !Ref BathyOrdersTable
+
+  VerifyDatasetStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: verify_dataset_status/
+      Role: !Ref LambdaRole
+      Environment:
+        Variables:
+          # TODO standardize variable names
+          ORDERS_TABLE: !Ref BathyOrdersTable
+
+  #
+  # Functions related to API Gateway
+  #
   AutogridApi:
     Type: AWS::Serverless::HttpApi
     Properties:
-      Description: !If [ ProdEnv, 'Autogrid API', !Sub '${EnvType} instance of Autogrid API']
+      Description: !If [ ProdEnv, 'Autogrid API', !Sub '${EnvType} instance of Autogrid API' ]
       CorsConfiguration:
         AllowOrigins:
           - "*"
@@ -53,15 +180,12 @@ Resources:
           - POST
           - OPTIONS
 
-  #
-  # Functions related to API Gateway
-  #
   CreateOrderFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: create_order/
-      Role: !Ref ExecutionRole
-      Description: "create a new order"
+      Role: !Ref LambdaRole
+      Description: "validate incoming payload and asynchonously start step function"
       Environment:
         Variables:
           STATE_MACHINE_ARN: !Ref BathymetryStateMachine
@@ -73,13 +197,17 @@ Resources:
             Path: /order
             Method: post
 
+
   CountPointsFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: count_points/
-      Role: !Ref ExecutionRole
+      Role: !Ref LambdaRole
       Description: "count number of points"
       Timeout: 25
+#      Environment:
+#        Variables:
+
       Events:
         bathy:
           Type: HttpApi
@@ -92,7 +220,7 @@ Resources:
       Type: AWS::Serverless::Function
       Properties:
         CodeUri: list_platforms/
-        Role: !Ref ExecutionRole
+        Role: !Ref LambdaRole
         Description: "list the platforms and providers"
         Timeout: 25
         Events:
@@ -107,7 +235,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: order_status/
-      Role: !Ref ExecutionRole
+      Role: !Ref LambdaRole
       Description: "report on the status of given order"
       Events:
         csb:
@@ -122,7 +250,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: list_files/
-      Role: !Ref ExecutionRole
+      Role: !Ref LambdaRole
       Description: "list S3 objects corresponding to given map service query parameters"
       Events:
         csb:
@@ -135,97 +263,83 @@ Resources:
   #
   # functions related to order processing step function
   #
-  MultibeamCatalogFunction2:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: multibeam_catalog_query2/
-      Role: !Ref ExecutionRole
-      Description: "queries the ArcGIS mapservice to get a list of multibeam files matching the filter parameters"
-      Environment:
-        Variables:
-          # TODO replace w/ variable
-          OUTPUT_BUCKET: "order-pickup"
-          CATALOG_URL: " https://gis.ngdc.noaa.gov/arcgis/rest/services/multibeam_files/MapServer/0/query"
 
-  MultibeamCatalogFunction:
-      Type: AWS::Serverless::Function
-      Properties:
-        CodeUri: multibeam_catalog_query/
-        Role: !Ref ExecutionRole
-        Description: "queries the ArcGIS mapservice to get a list of multibeam files matching the filter parameters"
-        Environment:
-          Variables:
-            # TODO replace w/ variable
-            OUTPUT_BUCKET: "csb-pilot-delivery"
-            CATALOG_URL: " https://gis.ngdc.noaa.gov/arcgis/rest/services/multibeam_files/MapServer/0/query"
-        Events:
-          multibeamCatalogQueryEvent:
-            Type: SQS
-            Properties:
-              Queue: !GetAtt MultibeamCatalogQueue.Arn
-              Enabled: true
+#  MultibeamCatalogFunction:
+#      Type: AWS::Serverless::Function
+#      Properties:
+#        CodeUri: multibeam_catalog_query/
+#        Role: !Ref ExecutionRole
+#        Description: "queries the ArcGIS mapservice to get a list of multibeam files matching the filter parameters"
+#        Environment:
+#          Variables:
+#            # TODO replace w/ variable
+#            OUTPUT_BUCKET: "csb-pilot-delivery"
+#            CATALOG_URL: " https://gis.ngdc.noaa.gov/arcgis/rest/services/multibeam_files/MapServer/0/query"
+#        Events:
+#          multibeamCatalogQueryEvent:
+#            Type: SQS
+#            Properties:
+#              Queue: !GetAtt MultibeamCatalogQueue.Arn
+#              Enabled: true
+#
+#
+#  OrderErrorHandlerFunction:
+#    Type: AWS::Serverless::Function
+#    Properties:
+#      CodeUri: order_error_handler/
+#      Role: !Ref ExecutionRole
+#      Description: "handle errors in the order-specific section of StepFunction"
+#
+#  OrderSuccessFunction:
+#    Type: AWS::Serverless::Function
+#    Properties:
+#      CodeUri: order_success/
+#      Role: !Ref ExecutionRole
+#      Description: "update database and format notification message when order succeeds"
 
-  DatasetErrorHandlerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: dataset_error_handler/
-      Role: !Ref ExecutionRole
-      Description: "handle errors in the dataset-specific section of StepFunction"
+#  FormatPointQueryFunction:
+#    Type: AWS::Serverless::Function
+#    Properties:
+#      CodeUri: format_point_query/
+#      Role: !Ref ExecutionRole
+#      Description: "construct the SQL used by Athena to extract CSB points"
 
-  OrderErrorHandlerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: order_error_handler/
-      Role: !Ref ExecutionRole
-      Description: "handle errors in the order-specific section of StepFunction"
+#  InitializeOrderRecordFunction:
+#    Type: AWS::Serverless::Function
+#    Properties:
+#      CodeUri: insert_order_record/
+#      Role: !Ref ExecutionRole
+#      Description: "insert a new order record into the order tracking table"
+#
+#  InitializeDatasetRecordFunction:
+#    Type: AWS::Serverless::Function
+#    Properties:
+#      CodeUri: insert_dataset_record/
+#      Role: !Ref ExecutionRole
+#      Description: "insert a new dataset record into the order tracking table"
 
-  OrderSuccessFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: order_success/
-      Role: !Ref ExecutionRole
-      Description: "update database and format notification message when order succeeds"
+#  UpdateDatasetRecordFunction:
+#    Type: AWS::Serverless::Function
+#    Properties:
+#      CodeUri: update_dataset_record/
+#      Role: !Ref ExecutionRole
+#      Description: "update the status of the dataset into the order tracking table"
 
-  FormatPointQueryFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: format_point_query/
-      Role: !Ref ExecutionRole
-      Description: "construct the SQL used by Athena to extract CSB points"
+#  VerifyDatasetStatusFunction:
+#    Type: AWS::Serverless::Function
+#    Properties:
+#      CodeUri: verify_dataset_status/
+#      Role: !Ref ExecutionRole
+#      Description: "verify all datasets in order are staged and ready for processing or delivery"
 
-  InitializeOrderRecordFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: insert_order_record/
-      Role: !Ref ExecutionRole
-      Description: "insert a new order record into the order tracking table"
-
-  InitializeDatasetRecordFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: insert_dataset_record/
-      Role: !Ref ExecutionRole
-      Description: "insert a new dataset record into the order tracking table"
-
-  UpdateDatasetRecordFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: update_dataset_record/
-      Role: !Ref ExecutionRole
-      Description: "update the status of the dataset into the order tracking table"
-
-  VerifyDatasetStatusFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: verify_dataset_status/
-      Role: !Ref ExecutionRole
-      Description: "verify all datasets in order are staged and ready for processing or delivery"
-
+#
+# shared resources
+#
   SendEmailViaRelayFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: send_email_via_relay/
-      Role: !Ref ExecutionRole
+      Role: !Ref LambdaRole
       Description: "send email message via NCIS email relay"
       Environment:
         Variables:
@@ -243,62 +357,6 @@ Resources:
             Queue: !GetAtt OrderNotificationQueue.Arn
             Enabled: true
 
-  #
-  # State Machine
-  #
-  BathymetryStateMachine2:
-    Type: AWS::Serverless::StateMachine
-    Properties:
-      DefinitionUri: statemachine/bathy_order_processor_v2.asl.json
-      Role: arn:aws:iam::282856304593:role/csb-bathy-sfn-role
-      DefinitionSubstitutions:
-        MultibeamCatalogQueueUrl: !Ref MultibeamCatalogQueue
-        OrderNotificationQueueUrl: !Ref OrderNotificationQueue
-        GridDataQueueUrl: !Ref GridDataQueue
-        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction2.Arn
-        UpdateDatasetRecordFunctionArn: !GetAtt UpdateDatasetRecordFunction.Arn
-        InitializeOrderRecordFunctionArn: !GetAtt InitializeOrderRecordFunction.Arn
-        InitializeDatasetRecordFunctionArn: !GetAtt InitializeDatasetRecordFunction.Arn
-        FormatPointQueryFunctionArn: !GetAtt FormatPointQueryFunction.Arn
-        DatasetErrorHandlerFunctionArn: !GetAtt DatasetErrorHandlerFunction.Arn
-        OrderErrorHandlerFunctionArn: !GetAtt OrderErrorHandlerFunction.Arn
-        OrderSuccessFunctionArn: !GetAtt OrderSuccessFunction.Arn
-        #        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
-        VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
-        # TODO avoid hardcoded value here with another Parameter?
-        AthenaOutputBucket: "s3://order-pickup/"
-        OrderTrackingTable: !Ref OrderTrackingTable
-  #        OrderTrackingTable: bathy-orders
-
-  BathymetryStateMachine:
-    Type: AWS::Serverless::StateMachine
-    Properties:
-      DefinitionUri: statemachine/bathy_order_processor.asl.json
-      # TODO different role for Step Function than for the Lambdas
-#      Role: !Ref ExecutionRole
-      Role: arn:aws:iam::282856304593:role/csb-bathy-sfn-role
-      DefinitionSubstitutions:
-        MultibeamCatalogQueueUrl: !Ref MultibeamCatalogQueue
-        OrderNotificationQueueUrl: !Ref OrderNotificationQueue
-        GridDataQueueUrl: !Ref GridDataQueue
-        UpdateDatasetRecordFunctionArn: !GetAtt UpdateDatasetRecordFunction.Arn
-        InitializeOrderRecordFunctionArn: !GetAtt InitializeOrderRecordFunction.Arn
-        InitializeDatasetRecordFunctionArn: !GetAtt InitializeDatasetRecordFunction.Arn
-        FormatPointQueryFunctionArn: !GetAtt FormatPointQueryFunction.Arn
-        DatasetErrorHandlerFunctionArn: !GetAtt DatasetErrorHandlerFunction.Arn
-        OrderErrorHandlerFunctionArn: !GetAtt OrderErrorHandlerFunction.Arn
-        OrderSuccessFunctionArn: !GetAtt OrderSuccessFunction.Arn
-#        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
-        VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
-        # TODO avoid hardcoded value here with another Parameter?
-        AthenaOutputBucket: "s3://order-pickup/"
-        OrderTrackingTable: !Ref OrderTrackingTable
-#        OrderTrackingTable: bathy-orders
-
-
-  #
-  # Queues
-  #
   MultibeamCatalogQueue:
     Type: AWS::SQS::Queue
     Properties:
@@ -359,9 +417,6 @@ Resources:
         AttributeName: "TTL"
         Enabled: True
 
-#
-# CloudWatch Alarms
-#
   StaleGridMessageAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -389,6 +444,63 @@ Resources:
         Threshold: 300
         ComparisonOperator: GreaterThanThreshold
         TreatMissingData: missing
+
+  #
+  # State Machine
+  #
+#  BathymetryStateMachine2:
+#    Type: AWS::Serverless::StateMachine
+#    Properties:
+#      DefinitionUri: statemachine/bathy_order_processor_v2.asl.json
+#      Role: arn:aws:iam::282856304593:role/csb-bathy-sfn-role
+#      DefinitionSubstitutions:
+#        MultibeamCatalogQueueUrl: !Ref MultibeamCatalogQueue
+#        OrderNotificationQueueUrl: !Ref OrderNotificationQueue
+#        GridDataQueueUrl: !Ref GridDataQueue
+#        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction2.Arn
+#        UpdateDatasetRecordFunctionArn: !GetAtt UpdateDatasetRecordFunction.Arn
+#        InitializeOrderRecordFunctionArn: !GetAtt InitializeOrderRecordFunction.Arn
+#        InitializeDatasetRecordFunctionArn: !GetAtt InitializeDatasetRecordFunction.Arn
+#        FormatPointQueryFunctionArn: !GetAtt FormatPointQueryFunction.Arn
+#        DatasetErrorHandlerFunctionArn: !GetAtt DatasetErrorHandlerFunction.Arn
+#        OrderErrorHandlerFunctionArn: !GetAtt OrderErrorHandlerFunction.Arn
+#        OrderSuccessFunctionArn: !GetAtt OrderSuccessFunction.Arn
+#        #        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
+#        VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
+#        # TODO avoid hardcoded value here with another Parameter?
+#        AthenaOutputBucket: "s3://order-pickup/"
+#        OrderTrackingTable: !Ref OrderTrackingTable
+#  #        OrderTrackingTable: bathy-orders
+#
+#  BathymetryStateMachine:
+#    Type: AWS::Serverless::StateMachine
+#    Properties:
+#      DefinitionUri: statemachine/bathy_order_processor.asl.json
+#      # TODO different role for Step Function than for the Lambdas
+##      Role: !Ref ExecutionRole
+#      Role: arn:aws:iam::282856304593:role/csb-bathy-sfn-role
+#      DefinitionSubstitutions:
+#        MultibeamCatalogQueueUrl: !Ref MultibeamCatalogQueue
+#        OrderNotificationQueueUrl: !Ref OrderNotificationQueue
+#        GridDataQueueUrl: !Ref GridDataQueue
+#        UpdateDatasetRecordFunctionArn: !GetAtt UpdateDatasetRecordFunction.Arn
+#        InitializeOrderRecordFunctionArn: !GetAtt InitializeOrderRecordFunction.Arn
+#        InitializeDatasetRecordFunctionArn: !GetAtt InitializeDatasetRecordFunction.Arn
+#        FormatPointQueryFunctionArn: !GetAtt FormatPointQueryFunction.Arn
+#        DatasetErrorHandlerFunctionArn: !GetAtt DatasetErrorHandlerFunction.Arn
+#        OrderErrorHandlerFunctionArn: !GetAtt OrderErrorHandlerFunction.Arn
+#        OrderSuccessFunctionArn: !GetAtt OrderSuccessFunction.Arn
+##        MultibeamCatalogFunctionArn: !GetAtt MultibeamCatalogFunction.Arn
+#        VerifyDatasetStatusFunctionArn: !GetAtt VerifyDatasetStatusFunction.Arn
+#        # TODO avoid hardcoded value here with another Parameter?
+#        AthenaOutputBucket: "s3://order-pickup/"
+#        OrderTrackingTable: !Ref OrderTrackingTable
+##        OrderTrackingTable: bathy-orders
+
+
+  #
+  # Queues
+  #
 
 Outputs:
   AutogridApiUrl:

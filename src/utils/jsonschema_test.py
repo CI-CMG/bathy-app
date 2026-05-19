@@ -3,7 +3,7 @@ from  jsonschema.exceptions import ValidationError
 import json
 
 # load payload schema definition
-with open('../../create_order/pointstore_payload_schema.json', 'r') as file:
+with open('../../create_order-old/pointstore_payload_schema.json', 'r') as file:
     payload_schema = json.load(file)
 
 csb_payload_json = '''{

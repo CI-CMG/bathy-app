@@ -12,14 +12,11 @@ logger.setLevel(os.environ.get("LOGLEVEL", "WARNING"))
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.getenv('ORDERS_TABLE', default='bathy-orders'))
 
-
-def update_dataset(order_id, dataset, output_location, status,now):
-    # TODO add constraint to reject update if item does not already exist
-    # use ExpressionAttributeNames since status,ttl are reserved words
+def update_order(order_id, status, output_location, now):
     response = table.update_item(
         Key={
             'PK': 'ORDER#' + order_id,
-            'SK': 'DATASET#' + dataset
+            'SK': 'ORDER'
         },
         UpdateExpression="SET #status = :status, last_update = :now, output_location = :output_location",
         ExpressionAttributeValues={
@@ -29,22 +26,6 @@ def update_dataset(order_id, dataset, output_location, status,now):
         },
         ExpressionAttributeNames={
             "#status": "status"
-        }
-    )
-    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
-        raise Exception("failed to update dataset")
-
-
-def update_order(order_id, output_location, now):
-    response = table.update_item(
-        Key={
-            'PK': 'ORDER#' + order_id,
-            'SK': 'ORDER'
-        },
-        UpdateExpression="SET last_update = :now, output_location = :output_location",
-        ExpressionAttributeValues={
-            ':now': now,
-            ':output_location': output_location
         }
     )
     if response['ResponseMetadata']['HTTPStatusCode'] != 200:
@@ -58,20 +39,13 @@ def lambda_handler(event, context):
     try:
         order_id = event['order_id']
         status = event['status']
-        dataset = event['label']
         output_location = event['output_location']
-
         now = datetime.now(timezone.utc).isoformat(timespec='seconds')
 
-        update_dataset(order_id=order_id, dataset=dataset, output_location=output_location, status=status, now=now)
-        # default order output_location to be same as CSB extract. will be overwritten if grid generated
-        if dataset == 'csb':
-            update_order(order_id=order_id, output_location=output_location, now=now)
+        update_order(order_id=order_id, status=status, output_location=output_location, now=now)
 
         return {
-            'label': dataset,
-            'output_location': output_location,
-            'status': status
+            'output_location': output_location
         }
 
     except Exception as e:

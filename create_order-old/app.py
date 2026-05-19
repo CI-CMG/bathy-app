@@ -1,13 +1,3 @@
-"""
-triggered by a POST to the API /order endpoint. Validates the JSON payload and
-starts the async stepfunction execution.
-
-If the payload is invalid, returns a non-200 HTTP status code.
-
-If the payload is valid and step function successfully started, returns an HTTP status 200.
-"""
-import json
-
 import json
 import boto3
 from datetime import datetime
@@ -78,15 +68,10 @@ def lambda_handler(event, context):
 
         # validate payload
         try:
-            # WARNING: successful schema validation does not ensure a valid email address!
             jsonschema.validate(instance=payload, schema=payload_schema)
         except jsonschema.exceptions.ValidationError as e:
             logger.warning(e.message)
             raise IllegalArgumentException(f'invalid payload format: failed to match JSON Schema')
-
-        # TODO limit geographic extent?
-
-        # TODO make bbox optional for CSB point-only requests?
 
         # restrict multibeam requests to gridded output
         mb_dataset = [dataset for dataset in payload['datasets'] if dataset['label'] == 'multibeam']
@@ -157,13 +142,14 @@ def lambda_handler(event, context):
         }
 
     except StateMachineException as e:
-        logger.error("error executing state machine")
+        logger.error("invalid payload in request")
         logger.debug(e)
         return {
             'statusCode': 500,
             'headers': {
                 'Content-Type': "application/json"
             },
+            # 'body': json.dumps(e.args[0])
             'body': str(e)
     }
 
@@ -180,8 +166,10 @@ def lambda_handler(event, context):
             'body': json.dumps(e.args[0])
         }
 
+
 class IllegalArgumentException(Exception):
     pass
+
 
 class StateMachineException(Exception):
     pass

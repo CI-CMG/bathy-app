@@ -4,12 +4,12 @@ import jsonschema
 from jsonschema.exceptions import ValidationError
 from jsonschema import Draft202012Validator
 import pytest
-# from create_order import app
+# from create_order-old import app
 
 
 @pytest.fixture()
 def payload_schema():
-    with open('../../create_order/pointstore_payload_schema.json', 'r') as file:
+    with open('../../create_order-old/pointstore_payload_schema.json', 'r') as file:
         return json.load(file)
 
 

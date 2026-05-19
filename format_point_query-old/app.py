@@ -1,7 +1,5 @@
 """
 construct SQL statement to extract points from CSB table per user request
-
-WARNING: dependency on Glue schema for table named in env variable ATHENA_TABLE
 """
 import logging
 import os
@@ -11,7 +9,7 @@ logger = logging.getLogger()
 logger.setLevel(os.environ.get("LOGLEVEL", "WARNING"))
 
 DATABASE = os.getenv('ATHENA_DATABASE', 'dcdb')
-TABLE = os.getenv('ATHENA_TABLE')
+TABLE = os.getenv('ATHENA_TABLE', 'csb_parquet')
 S3_BUCKET = os.getenv('ATHENA_OUTPUT_BUCKET', 's3://order-pickup/')
 
 
@@ -30,16 +28,19 @@ def lambda_handler(event, context):
 
     where_clauses += filters_to_where_clause(event['dataset'])
 
-    if 'response_format' in event['dataset'] and event['dataset']['format'] == 'compact':
+    # WARNING: hardcoded dependency on Glue table schema.
+    if 'format' in event['dataset'] and event['dataset']['format'] == 'compact':
         query_string = f"SELECT lon,lat,depth,time FROM {DATABASE}.{TABLE} where {' and '.join(where_clauses)}"
     else:
         query_string = f"SELECT lon,lat,depth,time,platform_name,provider,unique_id,file_uuid FROM {DATABASE}.{TABLE} where {' and '.join(where_clauses)}"
 
     return {
         'query_string': query_string,
-        'output_location': f"s3://{S3_BUCKET}/"
+        'label': event['dataset']['label'],
+        'order_id': event['order_id']
     }
 
 
 class IllegalArgumentException(Exception):
     pass
+
