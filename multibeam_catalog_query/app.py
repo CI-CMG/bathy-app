@@ -1,10 +1,8 @@
 import json
 import boto3
-import requests
-import uuid
 import logging
 import os
-from utils import payload_to_sql
+from utils import query_mapservice
 
 logger = logging.getLogger()
 logger.setLevel(os.environ.get("LOGLEVEL", "WARNING"))
@@ -12,12 +10,14 @@ logger.setLevel(os.environ.get("LOGLEVEL", "WARNING"))
 output_bucket = os.getenv('OUTPUT_BUCKET')
 catalog_url = os.getenv('CATALOG_URL')
 
-client = boto3.client('stepfunctions')
+sfn_client = boto3.client('stepfunctions')
 s3 = boto3.resource('s3')
+s3_client = boto3.client('s3')
+
 
 
 def send_success(task_token, payload=None):
-    response = client.send_task_success(
+    response = sfn_client.send_task_success(
         taskToken=task_token,
         output=json.dumps(payload)
     )
@@ -25,7 +25,7 @@ def send_success(task_token, payload=None):
 
 
 def send_failure(task_token, error_code='', error_cause=''):
-    response = client.send_task_failure(
+    response = sfn_client.send_task_failure(
         taskToken=task_token,
         error=error_code,
         cause=error_cause
@@ -41,33 +41,22 @@ def lambda_handler(event, context):
     order_id = event['order_id']
     dataset = event['dataset']
     label = dataset['label']
-    # expects coords in minx,miny,maxx,maxy order
-    bbox = ','.join([str(i) for i in event['bbox']])
-    sql = payload_to_sql(dataset)
-    logger.info(sql)
+    bbox = event['bbox'] if 'bbox' in event else None
 
-    params = {
-        "where": sql,
-        "outFields": "DATA_FILE",
-        "geometry": bbox,
-        "returnGeometry": "false",
-        "geometryType": "esriGeometryEnvelope",
-        "spatialRel": "esriSpatialRelIntersects",
-        "f": "json"
-    }
     try:
-        r = requests.get(catalog_url, params=params, timeout=10)
-        if r.status_code != 200:
-            logger.error('invalid response code: ' + str(r.status_code))
-        payload = r.json()
-        names = [x['attributes']['DATA_FILE'] for x in payload['features'] if
-                    x['attributes']['DATA_FILE'] is not None]
-        logger.info(f'{len(names)} multibeam files match request')
+        # files listed in mapservice may not actually exist in S3
+        fbt_files = query_mapservice(bbox=bbox, query_params=dataset)
+        logger.info(f'found {len(fbt_files)} files')
 
         # write output
-        s3_key = order_id + '_mbfiles.txt'
-        mb_files_manifest = s3.Object(bucket_name=output_bucket, key=s3_key)
-        result = mb_files_manifest.put(Body=r.text)
+        s3_key = order_id + '_mbfiles.json'
+        s3_client.put_object(
+            Bucket=output_bucket,
+            Key=s3_key,
+            Body=json.dumps(fbt_files),
+            ContentType='application/json'
+        )
+        logger.info(f'list of FBT files available at https://order-pickup.s3.us-east-1.amazonaws.com/{s3_key}')
 
         # respond to step function
         payload = {

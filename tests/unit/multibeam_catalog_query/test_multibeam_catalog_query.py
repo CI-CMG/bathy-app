@@ -1,11 +1,11 @@
 import pytest
-from multibeam_catalog_query2.utils import sql_quote_and_escape
-from multibeam_catalog_query2.utils import iso8601_to_utc_timestamp
-from multibeam_catalog_query2.utils import format_collection_date_clause
-from multibeam_catalog_query2.utils import format_archive_date_clause
-from multibeam_catalog_query2.utils import payload_to_sql
-from multibeam_catalog_query2.utils import query_mapservice
-from multibeam_catalog_query2.utils import convert_data_file_to_fbt_objkey
+from multibeam_catalog_query.utils import sql_quote_and_escape
+from multibeam_catalog_query.utils import iso8601_to_utc_timestamp
+from multibeam_catalog_query.utils import format_collection_date_clause
+from multibeam_catalog_query.utils import format_archive_date_clause
+from multibeam_catalog_query.utils import payload_to_sql
+from multibeam_catalog_query.utils import query_mapservice
+from multibeam_catalog_query.utils import convert_data_file_to_fbt_objkey
 import logging
 import os
 logger = logging.getLogger()
@@ -128,6 +128,7 @@ class TestMultibeamCatalogQuery:
 
     def test_multibeam_catalog_query(self, test_data):
         fbt_obj_keys = query_mapservice(None, test_data[2]['payload'])
+        print('FBT files: ', fbt_obj_keys)
         assert len(fbt_obj_keys)
         bucket_name = 'noaa-dcdb-bathymetry-pds'
 

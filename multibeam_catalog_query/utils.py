@@ -40,7 +40,6 @@ def query_mapservice(bbox, query_params):
     params = {
         "where": sql,
         "outFields": "DATA_FILE",
-        # "geometry": bbox,
         "returnGeometry": "false",
         "geometryType": "esriGeometryEnvelope",
         "spatialRel": "esriSpatialRelIntersects",
@@ -49,9 +48,10 @@ def query_mapservice(bbox, query_params):
     if bbox is not None:
         # expects coords in minx,miny,maxx,maxy order
         bbox_str = ','.join([str(i) for i in bbox])
-        params["bbox"] = bbox_str
+        params["geometry"] = bbox_str
 
     try:
+        # TODO mapservice limits 2000 records per page, need to iterate over all available pages
         r = requests.get(MAPSERVICE_URL, params=params, timeout=10)
         if r.status_code != 200:
             logger.error('invalid response code: ' + str(r.status_code))
@@ -59,7 +59,7 @@ def query_mapservice(bbox, query_params):
         fbt_files = [convert_data_file_to_fbt_objkey(x['attributes']['DATA_FILE']) for x in payload['features'] if
                  x['attributes']['DATA_FILE'] is not None]
 
-        logger.info(f'{len(fbt_files)} multibeam files match request')
+        # logger.info(f'{len(fbt_files)} multibeam files match request')
         return fbt_files
     except Exception as e:
         logger.error(e)
