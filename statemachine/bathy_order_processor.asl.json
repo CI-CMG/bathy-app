@@ -135,8 +135,7 @@
           },
           "Multibeam Catalog Query": {
             "Type": "Task",
-            "Resource": "arn:aws:states:::lambda:invoke",
-            "Output": "{% $states.result.Payload %}",
+            "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
             "Arguments": {
               "FunctionName": "${MultibeamCatalogFunction}",
               "Payload": {
@@ -179,7 +178,12 @@
             "Output": "{% $states.result.Payload %}",
             "Arguments": {
               "FunctionName": "${UpdateDatasetRecordFunction}",
-              "Payload": "{% $states.input %}"
+              "Payload": {
+                "order_id": "{% $order_id %}",
+                "status": "complete",
+                "label": "{% $dataset.label %}",
+                "output_location": "{% $states.input.output_location %}"
+              }
             },
             "Retry": [
               {
@@ -326,7 +330,7 @@
           "bbox": "{% $bbox %}",
           "datasets": "{% $states.input.datasets %}"
         },
-        "QueueUrl": "${GridDataQueue}"
+        "QueueUrl": "${GridDataQueueUrl}"
       },
       "Next": "update order record"
     },
