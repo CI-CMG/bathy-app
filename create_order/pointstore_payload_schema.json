@@ -55,6 +55,7 @@
           "description": "background fill used by mbgrid"
         }
       },
+      "additionalProperties": false,
       "required": [
         "resolution"
       ]
